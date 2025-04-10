@@ -1,4 +1,4 @@
-import React, {useRef, useState} from 'react';
+import React, {useRef, useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,10 @@ import {
 } from 'react-native';
 import type {RootStackScreenProps} from '../types/navigation';
 import {colors, typography, spacing, commonStyles} from '../styles/common';
+import {useSelector} from 'react-redux';
+import type {RootState} from '../store';
+import {useUser} from '../hooks/useUser';
+import {supabase} from '../lib/supabase';
 
 const CAROUSEL_DATA = [
   {
@@ -36,6 +40,39 @@ const {width: screenWidth} = Dimensions.get('window');
 const WelcomeScreen = ({navigation}: RootStackScreenProps<'Welcome'>) => {
   const scrollViewRef = useRef<ScrollView>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const {user, isLoading} = useUser();
+  const preferences = useSelector((state: RootState) => state.user?.preferences);
+  const isAuthenticated = useSelector((state: RootState) => state.auth?.isAuthenticated);
+
+  useEffect(() => {
+    const checkAuthState = async () => {
+      try {
+        // Get current session
+        const {data: {session}} = await supabase.auth.getSession();
+        console.log('Current session:', session?.user?.id);
+        console.log('Auth state:', {
+          isLoading,
+          isAuthenticated,
+          userId: user?.id,
+          sessionUserId: session?.user?.id,
+          preferences,
+          onboardingCompleted: preferences?.onboarding_completed
+        });
+
+        if (!isLoading && session?.user && isAuthenticated && preferences?.onboarding_completed) {
+          console.log('User is authenticated and onboarding completed, navigating to MainApp');
+          navigation.replace('MainApp');
+        } else if (!isLoading && session?.user && isAuthenticated && !preferences?.onboarding_completed) {
+          console.log('User is authenticated but onboarding not completed');
+          // Let the app navigator handle the routing to the appropriate onboarding screen
+        }
+      } catch (error) {
+        console.error('Error checking auth state:', error);
+      }
+    };
+
+    checkAuthState();
+  }, [isLoading, isAuthenticated, user, preferences, navigation]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const contentOffset = event.nativeEvent.contentOffset.x;

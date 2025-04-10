@@ -6,8 +6,16 @@ import {
   TouchableOpacity,
   FlatList,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import {useDispatch, useSelector} from 'react-redux';
+import {setUserProfile} from '../store/slices/authSlice';
+import {updateUserPreferences} from '../redux/slices/userSlice';
+import {supabase} from '../lib/supabase';
+import Toast from 'react-native-toast-message';
+import {colors, typography, spacing, commonStyles} from '../styles/common';
+import {useUser} from '../hooks/useUser';
 
 // List of girl names to randomly select from
 const GIRL_NAMES = [
@@ -20,8 +28,17 @@ const GIRL_NAMES = [
 
 const NameSelectionScreen = () => {
   const navigation = useNavigation();
+  const dispatch = useDispatch();
   const [names, setNames] = useState<string[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const {user} = useUser();
+  
+  const phoneNumber = useSelector((state: any) => {
+    const fromProfile = state.auth?.userProfile?.phoneNumber;
+    const fromVerification = state.auth?.verificationStatus?.phoneNumber;
+    return fromProfile || fromVerification;
+  });
 
   // Function to generate 12 unique random names
   const generateRandomNames = () => {
@@ -37,11 +54,83 @@ const NameSelectionScreen = () => {
     setSelectedName(name);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!selectedName) {
       return;
     }
-    navigation.navigate('EducationSelection', {name: selectedName});
+
+    setIsLoading(true);
+    try {
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      // Get phone number from Supabase session if not in Redux
+      let userPhoneNumber = phoneNumber;
+      if (!userPhoneNumber) {
+        const { data: { session } } = await supabase.auth.getSession();
+        userPhoneNumber = session?.user?.phone || null;
+      }
+
+      if (!userPhoneNumber) {
+        // Try to get phone from user preferences
+        const { data: preferences } = await supabase
+          .from('user_preferences')
+          .select('phone_number')
+          .eq('user_id', user.id)
+          .single();
+          
+        userPhoneNumber = preferences?.phone_number;
+      }
+
+      if (!userPhoneNumber) {
+        throw new Error('Please complete phone verification first');
+      }
+
+      // Update user preferences in Supabase
+      const {error: supabaseError} = await supabase
+        .from('user_preferences')
+        .upsert({
+          user_id: user.id,
+          display_name: selectedName,
+          onboarding_completed: true,
+          phone_number: userPhoneNumber
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (supabaseError) {
+        throw new Error(supabaseError.message);
+      }
+
+      // Update Redux store
+      dispatch(updateUserPreferences({
+        display_name: selectedName,
+        onboarding_completed: true,
+        phone_number: userPhoneNumber
+      }));
+
+      // Update auth state
+      dispatch(setUserProfile({
+        displayName: selectedName,
+        onboardingCompleted: true,
+        phoneNumber: userPhoneNumber
+      }));
+
+      // Navigate to next screen
+      navigation.navigate('EducationSelection', {
+        name: selectedName
+      });
+    } catch (error: any) {
+      console.error('Error in handleContinue:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error.message || 'Failed to save name preference',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderNameItem = ({item}: {item: string}) => (
@@ -81,18 +170,23 @@ const NameSelectionScreen = () => {
 
         <TouchableOpacity
           style={styles.generateButton}
-          onPress={generateRandomNames}>
+          onPress={generateRandomNames}
+          disabled={isLoading}>
           <Text style={styles.generateButtonText}>Generate New Names</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[
             styles.continueButton,
-            !selectedName && styles.continueButtonDisabled,
+            (!selectedName || isLoading) && styles.continueButtonDisabled,
           ]}
           onPress={handleContinue}
-          disabled={!selectedName}>
-          <Text style={styles.continueButtonText}>Continue</Text>
+          disabled={!selectedName || isLoading}>
+          {isLoading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.continueButtonText}>Continue</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

@@ -11,6 +11,8 @@ import {
 import {RootStackScreenProps} from '../types/navigation';
 import {commonStyles, typography, spacing, colors} from '../styles/common'; // Assuming colors are defined here
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import {useSelector} from 'react-redux';
+import {RootState} from '../store';
 
 // Define theme colors or import from common styles
 const themeColors = {
@@ -35,14 +37,28 @@ type User = typeof DUMMY_USERS[0];
 const VerifiedUsersScreen = ({
   navigation,
 }: RootStackScreenProps<'VerifiedUsers'>) => {
+  const userPhoneNumber = useSelector((state: RootState) => state.auth.userProfile.phoneNumber);
 
   const handleTalkNow = (user: User) => {
-    console.log('Initiate chat with:', user.name);
-    // Navigate to chat screen here
+    if (!userPhoneNumber) {
+      // Handle the case where user is not properly authenticated
+      console.error('User phone number not found');
+      return;
+    }
+
+    navigation.navigate('Chat', { 
+      userName: user.name,
+      userId: userPhoneNumber,
+      otherUserId: user.id 
+    });
   };
 
   const renderUserItem = ({ item }: { item: User }) => (
-    <View style={styles.userRow}>
+    <TouchableOpacity 
+      style={styles.userRow} 
+      onPress={() => handleTalkNow(item)}
+      activeOpacity={0.7}
+    >
       {/* Avatar */}
       <View style={styles.avatarContainer}>
         <View style={styles.avatar}>
@@ -70,10 +86,13 @@ const VerifiedUsersScreen = ({
       </View>
 
       {/* Talk Now Button */}
-      <TouchableOpacity style={styles.talkButton} onPress={() => handleTalkNow(item)}>
+      <TouchableOpacity 
+        style={styles.talkButton} 
+        onPress={() => handleTalkNow(item)}
+      >
         <Text style={styles.talkButtonText}>Talk</Text>
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 
   return (

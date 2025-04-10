@@ -11,6 +11,8 @@ import {
 } from 'redux-persist';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import authReducer from './slices/authSlice';
+import userReducer from './slices/userSlice';
+import {combineReducers} from '@reduxjs/toolkit';
 
 // Ensure AsyncStorage is available
 if (!AsyncStorage) {
@@ -20,15 +22,18 @@ if (!AsyncStorage) {
 const persistConfig = {
   key: 'root',
   storage: AsyncStorage,
-  whitelist: ['auth'], // Only persist auth state
+  whitelist: ['auth', 'user'], // Persist both auth and user state
 };
 
-const persistedAuthReducer = persistReducer(persistConfig, authReducer);
+const rootReducer = combineReducers({
+  auth: authReducer,
+  user: userReducer,
+});
+
+const persistedReducer = persistReducer(persistConfig, rootReducer);
 
 export const store = configureStore({
-  reducer: {
-    auth: persistedAuthReducer,
-  },
+  reducer: persistedReducer,
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({
       serializableCheck: {
@@ -38,9 +43,6 @@ export const store = configureStore({
 });
 
 export const persistor = persistStore(store);
-
-// Clear persisted state on app start (temporary fix)
-persistor.purge();
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch; 

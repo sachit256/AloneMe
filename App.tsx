@@ -13,6 +13,10 @@ import {PersistGate} from 'redux-persist/integration/react';
 import {store, persistor} from './src/store';
 import {RootState} from './src/store';
 import Toast from 'react-native-toast-message';
+import {useUser} from './src/hooks/useUser';
+import {getNextOnboardingScreen} from './src/utils/onboarding';
+import type {RootStackParamList} from './src/types/navigation';
+import {ActivityIndicator, View} from 'react-native';
 
 // Screen Imports
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -30,49 +34,106 @@ import VerificationScreen from './src/screens/VerificationScreen';
 import IdentityVerificationScreen from './src/screens/IdentityVerificationScreen';
 import MainTabs from './src/navigation/MainTabs';
 import VerifiedUsersScreen from './src/screens/VerifiedUsersScreen';
-
-import {RootStackParamList} from './src/types/navigation';
+import ChatScreen from './src/screens/ChatScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
+  const {user, preferences, isLoading} = useUser();
   const isAuthenticated = useSelector(
     (state: RootState) => state.auth.isAuthenticated,
   );
-  const hasCompletedOnboarding = useSelector(
-    (state: RootState) => state.auth.hasCompletedOnboarding,
-  );
+  const [isInitialized, setIsInitialized] = React.useState(false);
+
+  React.useEffect(() => {
+    // Only set initialized once we have loaded the initial state
+    if (!isLoading) {
+      setIsInitialized(true);
+    }
+  }, [isLoading]);
+
+  // Debug logging
+  console.log('Navigation State:', {
+    isLoading,
+    isInitialized,
+    user: user?.id,
+    preferences,
+    isAuthenticated,
+    onboardingCompleted: preferences?.onboarding_completed,
+  });
 
   const getInitialRouteName = (): keyof RootStackParamList => {
-    if (isAuthenticated && hasCompletedOnboarding) {
-      return 'MainApp';
+    let route: keyof RootStackParamList = 'Welcome';
+    let reason = '';
+
+    // First check if we're authenticated in Redux and have a user
+    if (!isAuthenticated || !user) {
+      route = 'Welcome';
+      reason = 'Not authenticated or no user';
     }
-    return 'Welcome';
+    // If authenticated and onboarding is completed, go to MainApp
+    else if (preferences?.onboarding_completed) {
+      route = 'MainApp';
+      reason = 'Onboarding completed';
+    }
+    // If authenticated but onboarding not completed
+    else {
+      route = getNextOnboardingScreen(preferences).screen as keyof RootStackParamList;
+      reason = 'Continuing onboarding';
+    }
+
+    console.log('Navigation Decision:', { route, reason });
+    return route;
   };
+
+  // Show loading indicator while initializing
+  if (!isInitialized) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  // Get the initial route name
+  const initialRoute = getInitialRouteName();
+  console.log('Selected initial route:', initialRoute);
 
   return (
     <Stack.Navigator
-      initialRouteName={getInitialRouteName()}
+      initialRouteName={initialRoute}
       screenOptions={{
         headerShown: false,
       }}>
-      <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
-      <Stack.Screen name="OTP" component={OTPScreen} />
-      <Stack.Screen name="LanguageSelection" component={LanguageSelectionScreen} />
-      <Stack.Screen name="PersonalInfo" component={PersonalInfoScreen} />
-      <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
-      <Stack.Screen name="Verification" component={VerificationScreen} />
-      <Stack.Screen name="IdentityVerification" component={IdentityVerificationScreen} />
-      <Stack.Screen name="HumanVerification" component={HumanVerificationScreen} />
-      <Stack.Screen name="NameSelection" component={NameSelectionScreen} />
-      <Stack.Screen name="EducationSelection" component={EducationSelectionScreen} />
-      <Stack.Screen name="EmotionalStory" component={EmotionalStoryScreen} />
-      <Stack.Screen name="AnalyzingProfile" component={AnalyzingProfileScreen} />
-      <Stack.Screen name="MainApp" component={MainTabs} />
-      <Stack.Screen name="VerifiedUsers" component={VerifiedUsersScreen} />
+      {Object.entries(screens).map(([name, Component]) => (
+        <Stack.Screen
+          key={name}
+          name={name as keyof RootStackParamList}
+          component={Component}
+        />
+      ))}
     </Stack.Navigator>
   );
+};
+
+// Define screens object with proper typing
+const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
+  Welcome: WelcomeScreen,
+  Login: LoginScreen,
+  OTP: OTPScreen,
+  LanguageSelection: LanguageSelectionScreen,
+  PersonalInfo: PersonalInfoScreen,
+  ProfileSetup: ProfileSetupScreen,
+  Verification: VerificationScreen,
+  IdentityVerification: IdentityVerificationScreen,
+  HumanVerification: HumanVerificationScreen,
+  NameSelection: NameSelectionScreen,
+  EducationSelection: EducationSelectionScreen,
+  EmotionalStory: EmotionalStoryScreen,
+  AnalyzingProfile: AnalyzingProfileScreen,
+  MainApp: MainTabs,
+  VerifiedUsers: VerifiedUsersScreen,
+  Chat: ChatScreen,
 };
 
 const App = () => {

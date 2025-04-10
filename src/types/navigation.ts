@@ -34,6 +34,11 @@ export type RootStackParamList = {
     story: string;
   };
   VerifiedUsers: undefined;
+  Chat: { 
+    userName: string;
+    userId: string;
+    otherUserId: string;
+  };
 };
 
 export type TabParamList = {
@@ -45,8 +50,8 @@ export type TabParamList = {
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = {
-  navigation: NativeStackNavigationProp<RootStackParamList, T>;
-  route: RouteProp<RootStackParamList, T>;
+  navigation: any;
+  route: { params: RootStackParamList[T] };
 };
 
 export type TabScreenProps<T extends keyof TabParamList> = CompositeScreenProps<

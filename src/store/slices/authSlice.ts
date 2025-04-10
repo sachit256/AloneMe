@@ -1,7 +1,9 @@
 import {createSlice, PayloadAction} from '@reduxjs/toolkit';
+import { supabase } from '../../lib/supabase';
 
 export interface UserProfile {
   name?: string;
+  displayName?: string;
   age?: number;
   bio?: string;
   language?: string;
@@ -18,6 +20,7 @@ export interface UserProfile {
     video?: string;
   };
   verificationStatus?: 'pending' | 'approved' | 'rejected';
+  onboardingCompleted?: boolean;
 }
 
 interface AuthState {
@@ -72,6 +75,7 @@ const authSlice = createSlice({
       state.verificationStatus = {
         isVerified: false,
       };
+      supabase.auth.signOut();
     },
   },
 });

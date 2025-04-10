@@ -6,9 +6,15 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
+import {useDispatch, useSelector} from 'react-redux';
+import {setUserProfile} from '../store/slices/authSlice';
 import type {RootStackScreenProps} from '../types/navigation';
 import {colors, typography, spacing, commonStyles} from '../styles/common';
+import {updateUserPreferences} from '../lib/userPreferences';
+import {supabase} from '../lib/supabase';
+import Toast from 'react-native-toast-message';
 
 interface EducationGroup {
   title: string;
@@ -39,19 +45,108 @@ const EducationSelectionScreen = ({
   route,
 }: RootStackScreenProps<'EducationSelection'>) => {
   const [selectedEducation, setSelectedEducation] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const dispatch = useDispatch();
+  
+  // Get phone number from Redux state
+  const phoneNumber = useSelector((state: any) => {
+    const fromProfile = state.auth.userProfile.phoneNumber;
+    const fromVerification = state.auth.verificationStatus.phoneNumber;
+    return fromProfile || fromVerification;
+  });
 
   const handleEducationSelect = (education: string) => {
     setSelectedEducation(education);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!selectedEducation) {
       return;
     }
-    navigation.navigate('EmotionalStory', {
-      name: route.params?.name,
-      education: selectedEducation,
-    });
+
+    setIsLoading(true);
+    try {
+      console.log('Starting education selection with phone:', phoneNumber);
+      
+      const {
+        data: {user},
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error('No authenticated user found');
+      }
+
+      console.log('Got Supabase user:', user);
+
+      // Get phone number from Supabase session if not in Redux
+      let userPhoneNumber = phoneNumber;
+      if (!userPhoneNumber) {
+        const { data: { session } } = await supabase.auth.getSession();
+        userPhoneNumber = session?.user?.phone || null;
+        console.log('Phone from session:', {
+          sessionPhone: session?.user?.phone,
+          session: session
+        });
+      }
+
+      if (!userPhoneNumber) {
+        // Try to get phone from user preferences
+        const { data: preferences } = await supabase
+          .from('user_preferences')
+          .select('phone_number')
+          .eq('user_id', user.id)
+          .single();
+          
+        userPhoneNumber = preferences?.phone_number;
+        console.log('Phone from preferences:', {
+          preferencesPhone: preferences?.phone_number,
+          preferences: preferences
+        });
+      }
+
+      if (!userPhoneNumber) {
+        throw new Error('Please complete phone verification first');
+      }
+
+      console.log('Using phone number:', userPhoneNumber);
+
+      // Update user preferences in Supabase
+      const {success, error, data} = await updateUserPreferences(
+        user.id,
+        {
+          education: selectedEducation,
+          phone_number: userPhoneNumber
+        },
+        userPhoneNumber
+      );
+
+      console.log('Update preferences result:', {success, error, data});
+
+      if (!success) {
+        throw new Error(error?.message || 'Failed to save education preference');
+      }
+
+      // Save to Redux state
+      dispatch(setUserProfile({
+        education: selectedEducation,
+        phoneNumber: userPhoneNumber
+      }));
+
+      // Navigate to next screen
+      navigation.navigate('EmotionalStory', {
+        name: route.params?.name,
+        education: selectedEducation,
+      });
+    } catch (error: any) {
+      console.error('Error in handleContinue:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error.message || 'Failed to save education preference',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -100,11 +195,15 @@ const EducationSelectionScreen = ({
           <TouchableOpacity
             style={[
               commonStyles.button,
-              !selectedEducation && commonStyles.buttonDisabled,
+              (!selectedEducation || isLoading) && commonStyles.buttonDisabled,
             ]}
             onPress={handleContinue}
-            disabled={!selectedEducation}>
-            <Text style={commonStyles.buttonText}>Continue</Text>
+            disabled={!selectedEducation || isLoading}>
+            {isLoading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={commonStyles.buttonText}>Continue</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

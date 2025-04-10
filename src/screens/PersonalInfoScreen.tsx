@@ -6,12 +6,16 @@ import {
   TouchableOpacity,
   Platform,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import {useDispatch} from 'react-redux';
 import {setUserProfile} from '../store/slices/authSlice';
 import type {RootStackScreenProps} from '../types/navigation';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {colors, typography, spacing, commonStyles} from '../styles/common';
+import {updateUserPreferences} from '../lib/userPreferences';
+import Toast from 'react-native-toast-message';
+import { supabase } from '../lib/supabase';
 
 const PersonalInfoScreen = ({
   navigation,
@@ -20,6 +24,7 @@ const PersonalInfoScreen = ({
   const [dateOfBirth, setDateOfBirth] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [age, setAge] = useState<number>(0);
+  const [isLoading, setIsLoading] = useState(false);
   const dispatch = useDispatch();
 
   const calculateAge = (birthDate: Date) => {
@@ -54,22 +59,59 @@ const PersonalInfoScreen = ({
     setShowDatePicker(true);
   };
 
-  const handleContinue = () => {
-    if (selectedGender) {
-      // Save gender and DOB information
-      dispatch(
-        setUserProfile({
+  const handleContinue = async () => {
+    if (selectedGender && age >= 18) {
+      setIsLoading(true);
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          throw new Error('No authenticated user found');
+        }
+
+        // Update user preferences in Supabase
+        const { success, error } = await updateUserPreferences(user.id, {
+          gender: selectedGender,
+          date_of_birth: dateOfBirth.toISOString(),
+          age: age,
+        });
+
+        if (!success) {
+          throw new Error(error?.message || 'Failed to save personal information');
+        }
+
+        // Save to Redux state
+        dispatch(
+          setUserProfile({
+            gender: selectedGender,
+            dateOfBirth: dateOfBirth.toISOString(),
+            age: age,
+          }),
+        );
+        
+        // Navigate to human verification with required params
+        navigation.navigate('HumanVerification', {
           gender: selectedGender,
           dateOfBirth: dateOfBirth.toISOString(),
           age: age,
-        }),
-      );
-      
-      // Navigate to human verification with required params
-      navigation.navigate('HumanVerification', {
-        gender: selectedGender,
-        dateOfBirth: dateOfBirth.toISOString(),
-        age: age,
+        });
+      } catch (error: any) {
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: error.message || 'Failed to save personal information',
+        });
+        console.error('Error saving personal information:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (age < 18) {
+      Toast.show({
+        type: 'error',
+        text1: 'Age Restriction',
+        text2: 'You must be 18 or older to use this app',
       });
     }
   };
@@ -136,11 +178,15 @@ const PersonalInfoScreen = ({
         <TouchableOpacity
           style={[
             commonStyles.button,
-            !selectedGender && commonStyles.buttonDisabled,
+            (!selectedGender || isLoading) && commonStyles.buttonDisabled,
           ]}
           onPress={handleContinue}
-          disabled={!selectedGender}>
-          <Text style={commonStyles.buttonText}>Continue</Text>
+          disabled={!selectedGender || isLoading}>
+          {isLoading ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <Text style={commonStyles.buttonText}>Continue</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

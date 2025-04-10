@@ -7,11 +7,15 @@ import {
   ScrollView,
   Image,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import {useDispatch} from 'react-redux';
-import {setUserProfile} from '../store/slices/authSlice';
+import {updateUserPreferences} from '../redux/slices/userSlice';
 import type {RootStackScreenProps} from '../types/navigation';
 import {colors, typography, spacing, commonStyles} from '../styles/common';
+import Toast from 'react-native-toast-message';
+import {supabase} from '../lib/supabase';
+import {useUser} from '../hooks/useUser';
 
 interface Language {
   id: string;
@@ -63,18 +67,74 @@ const LanguageSelectionScreen = ({
   navigation,
 }: RootStackScreenProps<'LanguageSelection'>) => {
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const dispatch = useDispatch();
+  const {user, preferences} = useUser();
 
   const handleLanguageSelect = (languageId: string) => {
     setSelectedLanguage(languageId);
   };
 
-  const handleContinue = () => {
-    if (selectedLanguage) {
-      // Save selected language to Redux state
-      dispatch(setUserProfile({language: selectedLanguage}));
-      // Continue to personal info
+  const handleContinue = async () => {
+    if (!selectedLanguage || !user) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // First check if a record exists
+      const {data: existingPrefs, error: fetchError} = await supabase
+        .from('user_preferences')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        throw new Error(fetchError.message);
+      }
+
+      let supabaseError;
+      if (existingPrefs) {
+        // Update existing record
+        const {error} = await supabase
+          .from('user_preferences')
+          .update({
+            preferred_language: selectedLanguage,
+          })
+          .eq('user_id', user.id);
+        supabaseError = error;
+      } else {
+        // Insert new record
+        const {error} = await supabase
+          .from('user_preferences')
+          .insert({
+            user_id: user.id,
+            preferred_language: selectedLanguage,
+            phone_number: preferences.phone_number,
+          });
+        supabaseError = error;
+      }
+
+      if (supabaseError) {
+        throw new Error(supabaseError.message);
+      }
+
+      // Update Redux store
+      dispatch(updateUserPreferences({
+        preferred_language: selectedLanguage,
+      }));
+
+      // Navigate to next screen
       navigation.navigate('PersonalInfo');
+    } catch (error: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error.message || 'Failed to save language preference',
+      });
+      console.error('Error saving language preference:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -96,7 +156,8 @@ const LanguageSelectionScreen = ({
                 styles.languageCard,
                 selectedLanguage === language.id && styles.selectedCard,
               ]}
-              onPress={() => handleLanguageSelect(language.id)}>
+              onPress={() => handleLanguageSelect(language.id)}
+              disabled={isLoading}>
               <View style={styles.cardContent}>
                 <Image
                   source={{uri: language.flag}}
@@ -125,11 +186,15 @@ const LanguageSelectionScreen = ({
         <TouchableOpacity
           style={[
             commonStyles.button,
-            !selectedLanguage && commonStyles.buttonDisabled,
+            (!selectedLanguage || isLoading) && commonStyles.buttonDisabled,
           ]}
           onPress={handleContinue}
-          disabled={!selectedLanguage}>
-          <Text style={commonStyles.buttonText}>Continue</Text>
+          disabled={!selectedLanguage || isLoading}>
+          {isLoading ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <Text style={commonStyles.buttonText}>Continue</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

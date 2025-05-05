@@ -11,29 +11,48 @@ import {
 } from 'react-native';
 import { TabScreenProps } from '../types/navigation';
 import { supabase } from '../lib/supabase';
-import { typography, spacing } from '../styles/common';
+import { typography, spacing, colors } from '../styles/common';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { CompositeNavigationProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { TabParamList, RootStackParamList } from '../types/navigation';
 
 const { width } = Dimensions.get('window');
 
 type VerificationStatus = 'unverified' | 'pending' | 'verified' | null;
+type AnnouncementItem = { id: string; /* Minimal type needed for listener */ };
 
-const HomeScreen = ({ navigation }: TabScreenProps<'Home'>) => {
+type HomeScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<TabParamList, 'Home'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+type Props = {
+  navigation: HomeScreenNavigationProp;
+};
+
+const HomeScreen = ({ navigation }: Props) => {
   const [isOnline, setIsOnline] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
   const [displayName, setDisplayName] = useState<string>('User');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [showNotificationBadge, setShowNotificationBadge] = useState(false);
 
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    let isMounted = true;
+
+    const fetchUserProfileData = async () => {
       setLoadingProfile(true);
       setProfileError(null);
+
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
           throw authError || new Error('User not authenticated');
         }
+        if (!isMounted) return;
 
         const { data: profileData, error: profileFetchError } = await supabase
           .from('user_preferences')
@@ -41,38 +60,61 @@ const HomeScreen = ({ navigation }: TabScreenProps<'Home'>) => {
           .eq('user_id', user.id)
           .single();
 
+        if (!isMounted) return;
+
         if (profileFetchError) {
           if (profileFetchError.code === 'PGRST116') {
-             console.warn('User profile not found, assuming unverified.');
-             setVerificationStatus('unverified');
-             setDisplayName('User');
+            console.warn('User profile not found, assuming unverified.');
+            setVerificationStatus('unverified');
+            setDisplayName('User');
           } else {
             throw profileFetchError;
           }
         } else if (profileData) {
           setDisplayName(profileData.display_name || 'User');
-          const status = profileData.verification_status;
-          if (status === 'unverified' || status === 'pending' || status === 'verified') {
-             setVerificationStatus(status);
-          } else {
-             console.warn(`Unexpected verification status found: ${status}, defaulting to unverified.`);
-             setVerificationStatus('unverified');
-          }
+          const status = profileData.verification_status as VerificationStatus;
+          setVerificationStatus(status === 'unverified' || status === 'pending' || status === 'verified' ? status : 'unverified');
         } else {
-           setVerificationStatus('unverified');
-           setDisplayName('User');
+          setVerificationStatus('unverified');
+          setDisplayName('User');
         }
 
       } catch (err: any) {
-        console.error('Error fetching user profile:', err);
+        if (!isMounted) return;
+        console.error('Error fetching home screen data:', err);
         setProfileError('Failed to load profile information.');
         setVerificationStatus(null);
       } finally {
-        setLoadingProfile(false);
+        if (isMounted) {
+          setLoadingProfile(false);
+        }
       }
     };
 
-    fetchUserProfile();
+    fetchUserProfileData();
+
+    const channel = supabase
+      .channel('public:announcements:home_badge_simple')
+      .on<AnnouncementItem>(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        (payload) => {
+          console.log('Announcement change detected, showing badge:', payload);
+          if (isMounted) {
+            setShowNotificationBadge(true);
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') { console.log('Realtime channel subscribed for badge!'); }
+        if (status === 'CHANNEL_ERROR') { console.error('Realtime channel error:', err); }
+        if (status === 'TIMED_OUT') { console.warn('Realtime channel timed out.'); }
+      });
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleVerifyPress = () => {
@@ -80,6 +122,7 @@ const HomeScreen = ({ navigation }: TabScreenProps<'Home'>) => {
   };
 
   const handleNotificationPress = () => {
+    setShowNotificationBadge(false);
     navigation.navigate('Announcements');
   };
 
@@ -150,8 +193,11 @@ const HomeScreen = ({ navigation }: TabScreenProps<'Home'>) => {
                     {isOnline ? 'Online' : 'Offline'}
                   </Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={handleNotificationPress} style={styles.notificationButton}>
+                <TouchableOpacity onPress={handleNotificationPress} style={styles.notificationButtonContainer}>
                     <Icon name="bell-outline" size={26} color="#FFFFFF" />
+                    {showNotificationBadge && (
+                        <View style={styles.badge} />
+                    )}
                 </TouchableOpacity>
             </View>
           </View>
@@ -280,8 +326,20 @@ const styles = StyleSheet.create({
   statusTextActive: {
     color: '#00BFA6',
   },
-  notificationButton: {
-      padding: spacing.xs,
+  notificationButtonContainer: {
+    padding: spacing.xs,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 1,
+    right: 1,
+    backgroundColor: colors.danger || '#FF5252',
+    borderRadius: 5,
+    width: 10,
+    height: 10,
+    borderWidth: 1,
+    borderColor: colors.background || '#121212',
   },
   statsScroll: {
     paddingBottom: 20,

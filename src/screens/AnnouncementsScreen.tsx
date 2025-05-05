@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
   Linking,
+  Alert,
 } from 'react-native';
 import { RootStackScreenProps, RootStackParamList } from '../types/navigation';
 import { typography, spacing } from '../styles/common';
@@ -70,7 +71,40 @@ const AnnouncementsScreen = ({
         setLoading(false);
       }
     };
+
     fetchAnnouncements();
+
+    const channel = supabase
+      .channel('public:announcements')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'announcements',
+        },
+        (payload) => {
+          console.log('Realtime Announcement Change received!', payload);
+          fetchAnnouncements();
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime channel subscribed for announcements!');
+        }
+        if (status === 'CHANNEL_ERROR') {
+          console.error('Realtime channel error:', err);
+          setError('Realtime connection error.');
+        }
+        if (status === 'TIMED_OUT') {
+          console.warn('Realtime channel timed out.');
+        }
+      });
+
+    return () => {
+      console.log('Unsubscribing from announcements channel');
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const formatDateTime = (dateString: string | null | undefined): string => {
@@ -119,31 +153,33 @@ const AnnouncementsScreen = ({
   };
 
   const renderAnnouncement = ({ item }: { item: AnnouncementItem }) => (
-    <View style={styles.announcementItem}>
+    <View style={styles.announcementCard}>
       {item.type === 'image' && item.image_url && (
         <Image source={{ uri: item.image_url }} style={styles.announcementImage} resizeMode="cover" />
       )}
-      <View style={[
-          styles.announcementTextContent,
-          item.type !== 'image' && styles.textContentPaddingTop
-      ]}>
+      <View style={styles.contentContainer}>
          <Text style={styles.announcementTitle}>{item.title}</Text>
          <Text style={styles.announcementMessage}>{item.message}</Text>
-         {item.type === 'link' && item.link_url && (
-            <TouchableOpacity onPress={() => handleLinkPress(item.link_url)}>
-                <Text style={styles.linkText}>{item.link_url}</Text>
-            </TouchableOpacity>
-         )}
          <Text style={styles.announcementDate}>{formatDateTime(item.publish_at || item.created_at)}</Text>
       </View>
-      {item.type === 'button' && item.button_text && (
-           <TouchableOpacity
-             style={styles.actionButton}
-             onPress={() => handleButtonPress(item)}
-            >
-             <Text style={styles.actionButtonText}>{item.button_text}</Text>
-           </TouchableOpacity>
-       )}
+      {(item.type === 'link' || item.type === 'button') && (
+        <View style={styles.actionContainer}>
+            {item.type === 'link' && item.link_url && (
+               <TouchableOpacity onPress={() => handleLinkPress(item.link_url)} style={styles.linkButton}>
+                   <Text style={styles.linkButtonText}>{item.link_url}</Text>
+                   <Icon name="open-in-new" size={16} color={themeColors.primary} style={styles.linkIcon}/>
+               </TouchableOpacity>
+            )}
+            {item.type === 'button' && item.button_text && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleButtonPress(item)}
+                >
+                <Text style={styles.actionButtonText}>{item.button_text}</Text>
+              </TouchableOpacity>
+            )}
+        </View>
+      )}
     </View>
   );
 
@@ -207,52 +243,59 @@ const styles = StyleSheet.create({
   listContainerEmpty: {
     flexGrow: 1,
   },
-  announcementItem: {
+  announcementCard: {
     backgroundColor: themeColors.surface,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: spacing.lg,
     overflow: 'hidden',
   },
   announcementImage: {
      width: '100%',
-     height: 150,
+     height: 180,
   },
-  announcementTextContent: {
-     paddingHorizontal: spacing.md,
-     paddingBottom: spacing.md,
-  },
-  textContentPaddingTop: {
-     paddingTop: spacing.md,
+  contentContainer: {
+     padding: spacing.md,
   },
   announcementTitle: {
-    ...typography.bodyStrong,
+    ...typography.h4,
     color: themeColors.textPrimary,
     marginBottom: spacing.sm,
-    marginTop: spacing.xs,
   },
   announcementMessage: {
     ...typography.body,
     color: themeColors.textSecondary,
-    marginBottom: spacing.sm,
-    lineHeight: (typography.body?.fontSize ?? 14) * 1.4,
-  },
-  linkText: {
-     ...typography.body,
-     color: themeColors.primary,
-     textDecorationLine: 'underline',
-     marginBottom: spacing.md,
+    lineHeight: (typography.body?.fontSize ?? 14) * 1.45,
+    marginBottom: spacing.md,
   },
   announcementDate: {
     ...typography.caption,
     color: themeColors.textSecondary,
     alignSelf: 'flex-end',
-    marginTop: spacing.xs,
+  },
+  actionContainer: {
+      borderTopWidth: 1,
+      borderTopColor: themeColors.background,
+      padding: spacing.md,
+  },
+  linkButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: spacing.xs,
+  },
+  linkButtonText: {
+     ...typography.link,
+     color: themeColors.primary,
+     textDecorationLine: 'none',
+     flexShrink: 1,
+     marginRight: spacing.xs,
+  },
+  linkIcon: {
+     marginLeft: 'auto',
   },
   actionButton: {
      backgroundColor: themeColors.primary,
-     paddingVertical: spacing.sm + 2,
-     paddingHorizontal: spacing.md,
-     margin: spacing.md,
+     paddingVertical: spacing.sm,
+     paddingHorizontal: spacing.lg,
      borderRadius: 6,
      alignItems: 'center',
   },

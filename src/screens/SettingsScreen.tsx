@@ -6,17 +6,50 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
+  Alert,
 } from 'react-native';
-import {TabScreenProps} from '../types/navigation';
+import { TabScreenProps } from '../types/navigation';
+import { useDispatch } from 'react-redux';
+import { resetAuth } from '../store/slices/authSlice';
+import { CommonActions } from '@react-navigation/native';
 
-const SettingsScreen = ({navigation}: TabScreenProps<'Settings'>) => {
-  const renderSettingItem = (title: string, subtitle?: string) => (
-    <TouchableOpacity style={styles.settingItem}>
+const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
+  const dispatch = useDispatch();
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Confirm Logout',
+      'Are you sure you want to log out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            dispatch(resetAuth());
+
+            navigation.dispatch(
+              CommonActions.reset({
+                index: 0,
+                routes: [{ name: 'Welcome' }],
+              })
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const renderSettingItem = (title: string, subtitle?: string, onPress?: () => void) => (
+    <TouchableOpacity style={styles.settingItem} onPress={onPress} disabled={!onPress}>
       <View>
         <Text style={styles.settingTitle}>{title}</Text>
         {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
       </View>
-      <Text style={styles.chevron}>›</Text>
+      <Text style={styles.chevron}>{onPress ? '›' : ''}</Text>
     </TouchableOpacity>
   );
 
@@ -28,25 +61,36 @@ const SettingsScreen = ({navigation}: TabScreenProps<'Settings'>) => {
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
-          {renderSettingItem('Profile', 'Manage your profile information')}
-          {renderSettingItem('Verification', 'Get verified badge')}
-          {renderSettingItem('Privacy', 'Control your privacy settings')}
+          {renderSettingItem('Profile', 'Manage your profile information', () => { /* Navigate to Profile */ })}
+          {renderSettingItem('Verification', 'Get verified badge', () => { /* Navigate to Verification */ })}
+          {renderSettingItem('Privacy', 'Control your privacy settings', () => { /* Navigate to Privacy */ })}
         </View>
         
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
-          {renderSettingItem('Notifications')}
-          {renderSettingItem('Language')}
-          {renderSettingItem('Theme')}
+          {renderSettingItem('Notifications', undefined, () => { /* Navigate to Notifications */ })}
+          {renderSettingItem('Language', undefined, () => { /* Navigate to Language */ })}
+          {renderSettingItem('Theme', undefined, () => { /* Navigate to Theme */ })}
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support</Text>
-          {renderSettingItem('Help Center')}
-          {renderSettingItem('Contact Us')}
-          {renderSettingItem('Terms of Service')}
-          {renderSettingItem('Privacy Policy')}
+          {renderSettingItem('Help Center', undefined, () => { /* Navigate to Help */ })}
+          {renderSettingItem('Contact Us', undefined, () => { /* Navigate to Contact */ })}
+          {renderSettingItem('Terms of Service', undefined, () => { /* Navigate to Terms */ })}
+          {renderSettingItem('Privacy Policy', undefined, () => { /* Navigate to Policy */ })}
         </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.settingItem, styles.logoutButton]}
+            onPress={handleLogout}
+          >
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -71,7 +115,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   section: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
   sectionTitle: {
     fontSize: 16,
@@ -101,6 +146,18 @@ const styles = StyleSheet.create({
   chevron: {
     fontSize: 20,
     color: '#888',
+  },
+  logoutButton: {
+    backgroundColor: '#B71C1C40',
+    borderColor: '#B71C1C',
+    borderWidth: 1,
+    justifyContent: 'center',
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    color: '#FF5252',
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 

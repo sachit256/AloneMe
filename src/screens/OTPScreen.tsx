@@ -80,7 +80,7 @@ const OTPScreen = ({route, navigation}: RootStackScreenProps<'OTP'>) => {
     console.log('OTP array:', otp);
     console.log('OTP string:', otpString);
     console.log('OTP length:', otpString.length);
-    
+
     // Validate we have exactly 6 digits
     if (otpString.length !== 6 || !otp.every(digit => digit !== '')) {
       Toast.show({
@@ -93,19 +93,35 @@ const OTPScreen = ({route, navigation}: RootStackScreenProps<'OTP'>) => {
 
     setIsLoading(true);
     try {
+      // Call the actual Supabase verifyOTP function
       const { success, error, session } = await verifyOTP(phoneNumber, otpString);
 
       if (success && session) {
-        // Create user preferences
+        // Verification successful, proceed with creating preferences and updating state
+        console.log('OTP Verified Successfully. Session:', session);
+
+        // Create user preferences using the real user ID from the session
         const { success: prefSuccess, error: prefError } = await createUserPreferences({
-          user_id: session.user.id,
+          user_id: session.user.id, // Use session user ID
           phone_number: phoneNumber,
-          onboarding_completed: false
+          onboarding_completed: false // Assuming onboarding starts after OTP
         });
 
         if (!prefSuccess) {
-          console.error('Failed to create user preferences:', prefError);
+          // Log preference creation error AND stop the flow
+          console.error('Critical: Failed to create user preferences:', prefError?.message || prefError);
+          Toast.show({
+             type: 'error', // Make it an error
+             text1: 'Account Setup Failed',
+             text2: 'Could not create user profile. Please try logging in again.',
+             visibilityTime: 4000 // Show longer
+          });
+          // Stop execution here; do not proceed to dispatch/navigation
+          return;
         }
+
+        // Only proceeds if prefSuccess is true
+        console.log('User preferences created successfully.'); // Add success log
 
         // Save all necessary user data to Redux
         dispatch(setAuthenticated(true));
@@ -117,62 +133,60 @@ const OTPScreen = ({route, navigation}: RootStackScreenProps<'OTP'>) => {
         );
         dispatch(
           setUserProfile({
+            // Set phone number and potentially other details from session if available
             phoneNumber: phoneNumber,
+            // Example: You might get email from session.user.email etc.
           }),
         );
-        
+
+        // Show success message
         Toast.show({
           type: 'success',
           text1: 'Success',
           text2: 'Phone number verified successfully',
         });
 
+        // Navigate to the next screen in the onboarding flow
         navigation.navigate('LanguageSelection');
+
       } else {
-        // Check for token expiration error
-        const isTokenExpired = error?.toLowerCase().includes('expired') || 
-                             error?.toLowerCase().includes('invalid token');
-        
+        // Verification failed
+        console.error('OTP Verification Failed:', error);
+
+        // Check for specific errors like expired token
+        const isTokenExpired = error?.toLowerCase().includes('expired') ||
+                             error?.toLowerCase().includes('invalid token') ||
+                             error?.toLowerCase().includes('not found'); // Include "token not found"
+
         if (isTokenExpired) {
           Toast.show({
             type: 'error',
-            text1: 'Session Expired',
-            text2: 'Your verification session has expired. Please request a new OTP.',
+            text1: 'Session Issue',
+            text2: 'Verification session expired or invalid. Please request a new OTP.',
           });
           // Reset timer to allow immediate resend
           setTimer(0);
         } else {
+          // Generic verification failure
           Toast.show({
             type: 'error',
             text1: 'Verification Failed',
             text2: error || 'Invalid OTP. Please try again.',
           });
         }
-        
+
+        // Clear OTP input on failure
         setOtp(['', '', '', '', '', '']);
         inputRefs.current[0]?.focus();
       }
     } catch (error: any) {
-      // Check for token expiration error in catch block as well
-      const isTokenExpired = error?.message?.toLowerCase().includes('expired') || 
-                           error?.message?.toLowerCase().includes('invalid token');
-      
-      if (isTokenExpired) {
-        Toast.show({
-          type: 'error',
-          text1: 'Session Expired',
-          text2: 'Your verification session has expired. Please request a new OTP.',
-        });
-        // Reset timer to allow immediate resend
-        setTimer(0);
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: error?.message || 'Failed to verify OTP. Please try again.',
-        });
-      }
-      
+       // Catch unexpected errors during the process
+      console.error('Unexpected Error during OTP verification:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error?.message || 'An unexpected error occurred.',
+      });
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } finally {

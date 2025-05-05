@@ -107,7 +107,8 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
          navigation.navigate('VerifiedUsers'); // This might work if MainTabs is directly in the stack
         break;
       case 'unverified':
-        // Handle other options
+        // Navigate to the UnverifiedUsers screen
+        navigation.navigate('UnverifiedUsers');
         break;
       case 'premium':
         // Handle other options

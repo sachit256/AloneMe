@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,14 @@ import {
   SafeAreaView,
   FlatList,
   TouchableOpacity,
-  Image,
+  ActivityIndicator,
 } from 'react-native';
 import {RootStackScreenProps} from '../types/navigation';
 import {commonStyles, typography, spacing, colors} from '../styles/common'; // Assuming colors are defined here
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useSelector} from 'react-redux';
 import {RootState} from '../store';
+import { supabase } from '../lib/supabase'; // Adjust path to your Supabase client instance
 
 // Define theme colors or import from common styles
 const themeColors = {
@@ -24,76 +25,179 @@ const themeColors = {
   textOnPrimary: '#FFFFFF',
 };
 
-// Dummy data with online status
-const DUMMY_USERS = [
-  { id: '1', name: 'Alice Johnson', age: 28, avatarText: 'A', location: 'New York, NY', status: 'Looking for connection', rating: 4.8, spentHours: 120, isOnline: true },
-  { id: '2', name: 'Bob Williams - A Very Long Name Indeed To Test Wrapping', age: 32, avatarText: 'B', location: 'Los Angeles, CA', status: 'Exploring new friendships', rating: 4.5, spentHours: 85, isOnline: false },
-  { id: '3', name: 'Charlie Brown', age: 25, avatarText: 'C', location: 'Chicago, IL', status: 'Here to chat and listen', rating: 4.9, spentHours: 210, isOnline: true },
-  { id: '4', name: 'Diana Davis', age: 30, avatarText: 'D', location: 'Houston, TX', status: 'Seeking meaningful conversations', rating: 4.6, spentHours: 55, isOnline: false },
-];
-
-type User = typeof DUMMY_USERS[0];
+// Define the type for user profile fetched from Supabase
+// Adjust this based on your actual table structure if needed
+type UserProfile = {
+  id: string; // Primary key from user_preferences
+  user_id: string; // Foreign key to auth.users
+  display_name: string | null;
+  age: number | null;
+  emotional_story: string | null; // Add emotional_story
+  // Add placeholders for future data
+  rating?: number | null;
+  spentHours?: number | null;
+};
 
 const VerifiedUsersScreen = ({
   navigation,
 }: RootStackScreenProps<'VerifiedUsers'>) => {
   const userPhoneNumber = useSelector((state: RootState) => state.auth.userProfile.phoneNumber);
+  const [verifiedUsers, setVerifiedUsers] = useState<UserProfile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleTalkNow = (user: User) => {
+  useEffect(() => {
+    const fetchVerifiedUsers = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // 1. Get the current logged-in user's ID
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (authError || !user) {
+          console.warn('Could not get current user ID to filter list.');
+          // Decide how to handle this: fetch all verified or show error?
+          // Fetching all verified for now, logged-in user might appear in list.
+        }
+
+        // 2. Build the query
+        let query = supabase
+          .from('user_preferences')
+          // Select the new field 'emotional_story'
+          .select('id, user_id, display_name, age, emotional_story')
+          .eq('verification_status', 'verified');
+
+        // 3. Add filter to exclude the current user IF we got their ID
+        if (user) {
+          query = query.neq('user_id', user.id); // Exclude self
+        }
+
+        // 4. Execute the query
+        const { data, error: fetchError } = await query;
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        if (data) {
+          // We'll keep the filter for display_name for now
+          // Assign fetched data, including the new field
+          setVerifiedUsers(data.filter(u => u.display_name));
+        }
+      } catch (err: any) {
+        console.error('Error fetching verified users:', err);
+        setError('Failed to load verified users. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchVerifiedUsers();
+  }, []);
+
+  const handleTalkNow = (user: UserProfile) => {
     if (!userPhoneNumber) {
-      // Handle the case where user is not properly authenticated
-      console.error('User phone number not found');
+      console.error('Current user phone number not found');
+      // Optionally show an alert to the user
       return;
     }
+    if (!user.user_id) {
+       console.error('Selected user ID not found');
+       // Optionally show an alert to the user
+       return;
+    }
 
-    navigation.navigate('Chat', { 
-      userName: user.name,
-      userId: userPhoneNumber,
-      otherUserId: user.id 
+    navigation.navigate('Chat', {
+      userName: user.display_name || 'User',
+      userId: userPhoneNumber, // Assuming this is the identifier for the *current* user in chat
+      otherUserId: user.user_id, // Use user_id (auth ID) or id (profile ID) depending on Chat screen needs
     });
   };
 
-  const renderUserItem = ({ item }: { item: User }) => (
-    <TouchableOpacity 
-      style={styles.userRow} 
-      onPress={() => handleTalkNow(item)}
-      activeOpacity={0.7}
-    >
-      {/* Avatar */}
-      <View style={styles.avatarContainer}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.avatarText}</Text>
-        </View>
-        {/* Conditionally styled online/offline indicator */}
-        <View style={[styles.onlineIndicator, item.isOnline ? styles.online : styles.offline]} />
-      </View>
+  // Navigation handler for the avatar
+  const handleViewProfile = (user: UserProfile) => {
+    if (!user.user_id) {
+      console.error("Cannot view profile: User ID missing.");
+      return;
+    }
+    navigation.navigate('UserProfileDetail', { userId: user.user_id });
+  };
 
-      {/* User Info Section */} 
-      <View style={styles.userInfoContainer}>
-        {/* Name */}
-        <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
-        {/* Rating below name */}
-        <View style={styles.ratingContainer}>
-          <Icon name="star" size={14} color="#FFC107" /> 
-          <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-        </View>
-        {/* Details (Age, Location, Hours) */}
-        <Text style={styles.userDetails} numberOfLines={1}>
-          {`${item.age} • ${item.location} • ${item.spentHours} hrs spent`}
-        </Text>
-        {/* Status */}
-        <Text style={styles.userStatus} numberOfLines={1}>{item.status}</Text>
-      </View>
+  const renderUserItem = ({ item }: { item: UserProfile }) => {
+    const name = item.display_name || 'Anonymous';
+    const avatarText = name.charAt(0).toUpperCase();
+    const rating = item.rating || 4.5; // Placeholder
+    const spentHours = item.spentHours || 0; // Placeholder
 
-      {/* Talk Now Button */}
-      <TouchableOpacity 
-        style={styles.talkButton} 
-        onPress={() => handleTalkNow(item)}
-      >
-        <Text style={styles.talkButtonText}>Talk</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    return (
+      <View style={styles.userCard}>
+        <View style={styles.cardTopSection}>
+          <TouchableOpacity onPress={() => handleViewProfile(item)}>
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{avatarText}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.userInfoContainer}>
+            <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+            <View style={styles.detailsRow}>
+              <View style={styles.ratingContainer}>
+                <Icon name="star" size={14} color="#FFC107" />
+                <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
+              </View>
+              <Text style={styles.userDetails}>
+                {item.age ? ` • ${item.age} yrs` : ''}
+                {` • ${spentHours} hrs spent`}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {item.emotional_story && (
+           <Text style={styles.userStatus} numberOfLines={3}>
+              {item.emotional_story}
+           </Text>
+        )}
+         {!item.emotional_story && (
+             <Text style={[styles.userStatus, styles.userStatusPlaceholder]} numberOfLines={1}>
+                 No story shared yet.
+             </Text>
+          )}
+
+        <View style={styles.cardBottomSection}>
+           <TouchableOpacity
+             style={styles.talkButton}
+             onPress={() => handleTalkNow(item)}
+           >
+             <Text style={styles.talkButtonText}>Talk Now</Text>
+           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+         <View style={styles.centered}>
+           <ActivityIndicator size="large" color={themeColors.primary} />
+           <Text style={styles.loadingText}>Loading Verified Users...</Text>
+         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+     return (
+       <SafeAreaView style={styles.safeArea}>
+         <View style={styles.centered}>
+           <Text style={styles.errorText}>{error}</Text>
+           {/* Optionally add a retry button */}
+         </View>
+       </SafeAreaView>
+     );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -102,15 +206,20 @@ const VerifiedUsersScreen = ({
           <Icon name="chevron-left" size={28} color={themeColors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Verified Users</Text>
-        {/* Placeholder for potential right-side header action */}
-        <View style={{width: 40}} /> 
+        <View style={{width: 40}} />
       </View>
-      <FlatList
-        data={DUMMY_USERS}
-        renderItem={renderUserItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-      />
+      {verifiedUsers.length === 0 ? (
+         <View style={styles.centered}>
+            <Text style={styles.emptyText}>No verified users found yet.</Text>
+         </View>
+      ) : (
+        <FlatList
+          data={verifiedUsers}
+          renderItem={renderUserItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -125,42 +234,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md, // Consistent padding
+    paddingHorizontal: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: themeColors.surface,
   },
   backButton: {
-    padding: spacing.xs, // Smaller hit area is fine if icon is clear
+    padding: spacing.xs,
   },
   headerTitle: {
     ...typography.h3,
     color: themeColors.textPrimary,
   },
-  // Add a placeholder view to balance the header if needed
   headerPlaceholder: {
-    width: 32, // Match approx back button size
+    width: 40, // Maintain balance
   },
   listContainer: {
-    paddingVertical: spacing.sm, 
-    paddingHorizontal: spacing.md, 
+    padding: spacing.md, // Padding around the list
   },
-  userRow: {
+  userCard: {
+    backgroundColor: themeColors.surface, // Card background
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md, // Space between cards
+    // Optional: Add shadow for elevation (iOS)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    // Optional: Add elevation for Android
+    elevation: 3,
+  },
+  cardTopSection: {
     flexDirection: 'row',
-    alignItems: 'flex-start', // Align items to the top 
-    paddingVertical: spacing.md, 
-    marginBottom: spacing.lg, // Increase margin slightly for better separation
-    borderBottomWidth: 1, // Add a subtle separator line
-    borderBottomColor: themeColors.surface, 
+    alignItems: 'center', // Align avatar and info vertically
+    marginBottom: spacing.sm, // Space below top section
   },
   avatarContainer: {
-    position: 'relative',
     marginRight: spacing.md,
   },
   avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: themeColors.surface,
+    backgroundColor: '#333', // Slightly different avatar bg
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -169,70 +285,80 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
   },
-  onlineIndicator: {
-    width: 14, // Slightly larger indicator
-    height: 14,
-    borderRadius: 7,
-    position: 'absolute',
-    bottom: -1, // Adjust position slightly
-    right: -1,
-    borderWidth: 2,
-    borderColor: themeColors.background, 
-  },
-  online: {
-    backgroundColor: '#4CAF50', // Green for online
-  },
-  offline: {
-    backgroundColor: themeColors.textSecondary, // Gray for offline
-  },
   userInfoContainer: {
-    flex: 1, 
-    marginRight: spacing.sm, 
+    flex: 1, // Take remaining space
   },
   userName: {
-    ...typography.bodyStrong, 
+    ...typography.bodyStrong,
     color: themeColors.textPrimary,
-    marginBottom: 3, // Space below name
+    marginBottom: 3,
+  },
+  detailsRow: {
+     flexDirection: 'row',
+     alignItems: 'center',
   },
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    // Remove background pill for cleaner look
-    // backgroundColor: themeColors.surface, 
-    // paddingHorizontal: spacing.xs,
-    // paddingVertical: 2,
-    // borderRadius: 8,
-    alignSelf: 'flex-start', // Align to the start
-    marginBottom: 4, // Space below rating
+    marginRight: spacing.sm, // Space between rating and other details
   },
   ratingText: {
-    ...typography.caption, // Make rating text same size as details
-    color: themeColors.textSecondary, // Use secondary color
-    marginLeft: 3, // Adjust spacing to star
+    ...typography.caption,
+    color: themeColors.textSecondary,
+    marginLeft: 3,
     fontWeight: '500',
   },
   userDetails: {
-    ...typography.caption, 
+    ...typography.caption,
     color: themeColors.textSecondary,
-    marginBottom: 4, // Space below details
+    flexShrink: 1, // Allow text to shrink if needed
   },
   userStatus: {
-    ...typography.caption, 
-    color: themeColors.textSecondary, 
-    fontStyle: 'normal', 
+    ...typography.caption,
+    color: themeColors.textSecondary,
+    fontStyle: 'normal',
+    marginTop: spacing.sm, // Add space above the story
+    marginBottom: spacing.md, // Add space below the story
+  },
+   userStatusPlaceholder: {
+     fontStyle: 'italic',
+     color: '#666',
+  },
+  cardBottomSection: {
+    alignItems: 'flex-end', // Align button to the right
+    marginTop: spacing.sm,
   },
   talkButton: {
     backgroundColor: themeColors.primary,
     paddingVertical: spacing.xs + 2,
-    paddingHorizontal: spacing.md,
-    borderRadius: 15, 
-    alignSelf: 'center', // Vertically center button relative to row content
-    marginLeft: 'auto', // Push button to the right
+    paddingHorizontal: spacing.lg, // Make button slightly wider
+    borderRadius: 20, // More rounded button
   },
   talkButtonText: {
-    ...typography.buttonSmall, 
+    ...typography.buttonSmall,
     color: themeColors.textOnPrimary,
     fontWeight: '600',
+  },
+  centered: { // New style for centering content
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  loadingText: { // New style
+    marginTop: spacing.md,
+    color: themeColors.textSecondary,
+    ...typography.body,
+  },
+  errorText: { // New style
+    color: '#FF5252',
+    ...typography.body,
+    textAlign: 'center',
+  },
+  emptyText: { // New style
+     color: themeColors.textSecondary,
+     ...typography.body,
+     textAlign: 'center',
   },
 });
 

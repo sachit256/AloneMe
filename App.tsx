@@ -34,7 +34,10 @@ import VerificationScreen from './src/screens/VerificationScreen';
 import IdentityVerificationScreen from './src/screens/IdentityVerificationScreen';
 import MainTabs from './src/navigation/MainTabs';
 import VerifiedUsersScreen from './src/screens/VerifiedUsersScreen';
+import UnverifiedUsersScreen from './src/screens/UnverifiedUsersScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import UserProfileDetailScreen from './src/screens/UserProfileDetailScreen';
+import AnnouncementsScreen from './src/screens/AnnouncementsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -133,7 +136,10 @@ const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
   AnalyzingProfile: AnalyzingProfileScreen,
   MainApp: MainTabs,
   VerifiedUsers: VerifiedUsersScreen,
+  UnverifiedUsers: UnverifiedUsersScreen,
   Chat: ChatScreen,
+  UserProfileDetail: UserProfileDetailScreen,
+  Announcements: AnnouncementsScreen,
 };
 
 const App = () => {

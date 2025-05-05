@@ -34,11 +34,14 @@ export type RootStackParamList = {
     story: string;
   };
   VerifiedUsers: undefined;
+  UnverifiedUsers: undefined;
   Chat: { 
     userName: string;
     userId: string;
     otherUserId: string;
   };
+  UserProfileDetail: { userId: string };
+  Announcements: undefined;
 };
 
 export type TabParamList = {

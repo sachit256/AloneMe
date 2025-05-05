@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,46 +7,156 @@ import {
   TouchableOpacity,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
-import {TabScreenProps} from '../types/navigation';
-import {CommonActions} from '@react-navigation/native';
+import { TabScreenProps } from '../types/navigation';
+import { supabase } from '../lib/supabase';
+import { typography, spacing } from '../styles/common';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const {width} = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
-const HomeScreen = ({navigation}: TabScreenProps<'Home'>) => {
+type VerificationStatus = 'unverified' | 'pending' | 'verified' | null;
+
+const HomeScreen = ({ navigation }: TabScreenProps<'Home'>) => {
   const [isOnline, setIsOnline] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
+  const [displayName, setDisplayName] = useState<string>('User');
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      setLoadingProfile(true);
+      setProfileError(null);
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          throw authError || new Error('User not authenticated');
+        }
+
+        const { data: profileData, error: profileFetchError } = await supabase
+          .from('user_preferences')
+          .select('display_name, verification_status')
+          .eq('user_id', user.id)
+          .single();
+
+        if (profileFetchError) {
+          if (profileFetchError.code === 'PGRST116') {
+             console.warn('User profile not found, assuming unverified.');
+             setVerificationStatus('unverified');
+             setDisplayName('User');
+          } else {
+            throw profileFetchError;
+          }
+        } else if (profileData) {
+          setDisplayName(profileData.display_name || 'User');
+          const status = profileData.verification_status;
+          if (status === 'unverified' || status === 'pending' || status === 'verified') {
+             setVerificationStatus(status);
+          } else {
+             console.warn(`Unexpected verification status found: ${status}, defaulting to unverified.`);
+             setVerificationStatus('unverified');
+          }
+        } else {
+           setVerificationStatus('unverified');
+           setDisplayName('User');
+        }
+
+      } catch (err: any) {
+        console.error('Error fetching user profile:', err);
+        setProfileError('Failed to load profile information.');
+        setVerificationStatus(null);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
 
   const handleVerifyPress = () => {
     navigation.navigate('Verification');
   };
 
+  const handleNotificationPress = () => {
+    navigation.navigate('Announcements');
+  };
+
+  const renderVerificationBanner = () => {
+    if (loadingProfile) {
+      return (
+        <View style={styles.verificationBanner}>
+           <ActivityIndicator color="#00BFA6" />
+        </View>
+      );
+    }
+
+    if (profileError || verificationStatus === 'verified') {
+      return null;
+    }
+
+    if (verificationStatus === 'pending') {
+      return (
+        <View style={[styles.verificationBanner, styles.pendingBanner]}>
+          <View style={styles.verificationContent}>
+            <Text style={styles.verificationTitle}>Verification Pending</Text>
+            <Text style={styles.verificationText}>
+              Your documents are under review. We'll notify you soon.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.verificationBanner}>
+        <View style={styles.verificationContent}>
+          <Text style={styles.verificationTitle}>Complete Verification</Text>
+          <Text style={styles.verificationText}>
+            Get verified to unlock all features and start earning
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.verifyButton}
+          onPress={handleVerifyPress}
+        >
+          <Text style={styles.verifyButtonText}>Verify Now</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Profile Section */}
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
             <View>
               <Text style={styles.greetingText}>Good Evening 👋</Text>
-              <Text style={styles.nameText}>Saanvi</Text>
+              <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.statusToggle, isOnline && styles.statusToggleActive]}
-              onPress={() => setIsOnline(!isOnline)}>
-              <View
-                style={[
-                  styles.toggleHandle,
-                  isOnline && styles.toggleHandleActive,
-                ]}
-              />
-              <Text style={[styles.statusText, isOnline && styles.statusTextActive]}>
-                {isOnline ? 'Online' : 'Offline'}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+                <TouchableOpacity
+                  style={[styles.statusToggle, isOnline && styles.statusToggleActive]}
+                  onPress={() => setIsOnline(!isOnline)}>
+                  <View
+                    style={[
+                      styles.toggleHandle,
+                      isOnline && styles.toggleHandleActive,
+                    ]}
+                  />
+                  <Text style={[styles.statusText, isOnline && styles.statusTextActive]}>
+                    {isOnline ? 'Online' : 'Offline'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNotificationPress} style={styles.notificationButton}>
+                    <Icon name="bell-outline" size={26} color="#FFFFFF" />
+                </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        {/* Stats Cards */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -66,7 +176,6 @@ const HomeScreen = ({navigation}: TabScreenProps<'Home'>) => {
           </View>
         </ScrollView>
 
-        {/* Quick Actions */}
         <View style={styles.actionsSection}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
@@ -97,20 +206,8 @@ const HomeScreen = ({navigation}: TabScreenProps<'Home'>) => {
           </View>
         </View>
 
-        {/* Verification Banner */}
-        <View style={styles.verificationBanner}>
-          <View style={styles.verificationContent}>
-            <Text style={styles.verificationTitle}>Complete Verification</Text>
-            <Text style={styles.verificationText}>
-              Get verified to unlock all features and start earning
-            </Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.verifyButton}
-            onPress={handleVerifyPress}>
-            <Text style={styles.verifyButtonText}>Verify Now</Text>
-          </TouchableOpacity>
-        </View>
+        {renderVerificationBanner()}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -125,15 +222,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100, // Space for tab bar
+    paddingBottom: 100,
   },
   profileSection: {
     padding: 20,
+    paddingBottom: 0,
   },
   profileHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 20,
   },
   greetingText: {
     fontSize: 16,
@@ -145,6 +244,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
+  headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+  },
   statusToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -154,6 +257,7 @@ const styles = StyleSheet.create({
     paddingRight: 12,
     borderRadius: 20,
     width: 100,
+    marginRight: spacing.sm,
   },
   statusToggleActive: {
     backgroundColor: '#00513A',
@@ -176,8 +280,11 @@ const styles = StyleSheet.create({
   statusTextActive: {
     color: '#00BFA6',
   },
+  notificationButton: {
+      padding: spacing.xs,
+  },
   statsScroll: {
-    marginTop: 20,
+    paddingBottom: 20,
   },
   statsContainer: {
     paddingHorizontal: 15,
@@ -188,6 +295,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 15,
     width: width * 0.4,
+    minWidth: 140,
     alignItems: 'center',
   },
   statValue: {
@@ -215,10 +323,11 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   actionCard: {
-    width: (width - 55) / 2,
+    width: (width - 40 - 15) / 2,
     backgroundColor: '#1E1E1E',
     padding: 15,
     borderRadius: 15,
+    alignItems: 'center',
   },
   actionIcon: {
     width: 40,
@@ -235,14 +344,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FFFFFF',
     fontWeight: '500',
+    textAlign: 'center',
   },
   verificationBanner: {
-    margin: 20,
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 20,
     padding: 20,
     backgroundColor: '#1E1E1E',
     borderRadius: 15,
     borderWidth: 1,
     borderColor: '#00BFA6',
+  },
+  pendingBanner: {
+     borderColor: '#FFC107',
   },
   verificationContent: {
     marginBottom: 15,
@@ -267,6 +382,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  errorText: { 
+     color: '#FF5252', 
+     textAlign: 'center',
+     padding: spacing.md, 
   },
 });
 

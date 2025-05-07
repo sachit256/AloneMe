@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,20 +8,24 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  Modal,
+  Switch,
+  Alert,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import { TabScreenProps } from '../types/navigation';
 import { supabase } from '../lib/supabase';
 import { typography, spacing, colors } from '../styles/common';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { CompositeNavigationProp } from '@react-navigation/native';
+import { CompositeNavigationProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TabParamList, RootStackParamList } from '../types/navigation';
 
 const { width } = Dimensions.get('window');
 
 type VerificationStatus = 'unverified' | 'pending' | 'verified' | null;
-type AnnouncementItem = { id: string; /* Minimal type needed for listener */ };
+type AnnouncementItem = { id: string; };
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<TabParamList, 'Home'>,
@@ -32,6 +36,117 @@ type Props = {
   navigation: HomeScreenNavigationProp;
 };
 
+// --- Supabase Service Functions ---
+
+// Fetches the current availability status specifically for VideoCall
+async function fetchVideoCallAvailability(userId: string): Promise<boolean> {
+  console.log('Fetching video call availability for:', userId);
+  const { data, error } = await supabase
+    .from('user_service_availability')
+    .select('is_available')
+    .eq('user_id', userId)
+    .eq('service_type', 'VideoCall') 
+    .single();
+
+  if (error && error.code !== 'PGRST116') { 
+    console.error('Error fetching video call availability:', error);
+    throw error; 
+  }
+  console.log('Fetched video status:', data?.is_available);
+  return data?.is_available || false; 
+}
+
+// Saves only the VideoCall availability status using Upsert
+async function saveServiceAvailability(userId: string, videoCallEnabled: boolean): Promise<void> {
+  console.log(`Saving VideoCall availability for ${userId}: ${videoCallEnabled}`);
+  
+  // Define only the VideoCall row to be inserted or updated
+  const videoCallAvailability = {
+    user_id: userId,
+    service_type: 'VideoCall', 
+    is_available: videoCallEnabled
+  };
+
+  // Perform the upsert operation for only the VideoCall row
+  const { error } = await supabase
+    .from('user_service_availability')
+    .upsert(videoCallAvailability, {
+      onConflict: 'user_id,service_type', // Matches the composite PRIMARY KEY
+    });
+
+  if (error) {
+    console.error('Error saving video call availability:', error);
+    throw error; 
+  }
+
+  console.log('VideoCall availability saved successfully to Supabase.');
+}
+// --- End of Supabase Service Functions ---
+
+const AvailabilityModal = (
+    { visible, onClose, currentVideoStatus, onSave }: 
+    { 
+        visible: boolean; 
+        onClose: () => void; 
+        currentVideoStatus: boolean;
+        onSave: (isVideoEnabled: boolean) => void;
+    }
+) => {
+    const [isVideoCallEnabled, setIsVideoCallEnabled] = useState(currentVideoStatus);
+
+    useEffect(() => {
+        setIsVideoCallEnabled(currentVideoStatus);
+    }, [currentVideoStatus, visible]);
+
+    const handleSave = () => {
+        onSave(isVideoCallEnabled);
+    };
+
+    if (!visible) return null;
+
+    return (
+        <Modal
+            animationType="slide"
+            transparent={true}
+            visible={visible}
+            onRequestClose={onClose}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContainer}>
+                    <Text style={styles.modalTitle}>Set Availability</Text>
+                    
+                    <View style={styles.availabilityItem}>
+                        <Text style={styles.availabilityLabel}>Chat</Text>
+                        <Switch trackColor={{ false: "#767577", true: "#81b0ff" }} thumbColor={"#f4f3f4"} ios_backgroundColor="#3e3e3e" value={true} disabled={true} />
+                    </View>
+                    <View style={styles.availabilityItem}>
+                        <Text style={styles.availabilityLabel}>Audio Call</Text>
+                        <Switch trackColor={{ false: "#767577", true: "#81b0ff" }} thumbColor={"#f4f3f4"} ios_backgroundColor="#3e3e3e" value={true} disabled={true} />
+                    </View>
+                    <View style={styles.availabilityItem}>
+                        <Text style={styles.availabilityLabel}>Video Call</Text>
+                        <Switch 
+                            trackColor={{ false: "#767577", true: "#00BFA6" }}
+                            thumbColor={isVideoCallEnabled ? "#00BFA6" : "#f4f3f4"}
+                            onValueChange={setIsVideoCallEnabled} 
+                            value={isVideoCallEnabled} 
+                        />
+                    </View>
+
+                    <View style={styles.modalActions}>
+                        <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={onClose}>
+                            <Text style={styles.modalButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleSave}>
+                            <Text style={styles.modalButtonText}>Save</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+};
+
 const HomeScreen = ({ navigation }: Props) => {
   const [isOnline, setIsOnline] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
@@ -40,19 +155,24 @@ const HomeScreen = ({ navigation }: Props) => {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [showNotificationBadge, setShowNotificationBadge] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+  // New states for availability modal
+  const [availabilityModalVisible, setAvailabilityModalVisible] = useState(false);
+  const [initialVideoCallStatus, setInitialVideoCallStatus] = useState(false);
+  const [isSavingAvailability, setIsSavingAvailability] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-    const fetchUserProfileData = async () => {
+  const fetchInitialData = useCallback(async () => {
       setLoadingProfile(true);
       setProfileError(null);
+      let userIdToSet: string | null = null;
 
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         if (authError || !user) {
           throw authError || new Error('User not authenticated');
         }
-        if (!isMounted) return;
+        userIdToSet = user.id;
+        setCurrentUserId(user.id);
 
         const { data: profileData, error: profileFetchError } = await supabase
           .from('user_preferences')
@@ -60,11 +180,8 @@ const HomeScreen = ({ navigation }: Props) => {
           .eq('user_id', user.id)
           .single();
 
-        if (!isMounted) return;
-
         if (profileFetchError) {
           if (profileFetchError.code === 'PGRST116') {
-            console.warn('User profile not found, assuming unverified.');
             setVerificationStatus('unverified');
             setDisplayName('User');
           } else {
@@ -78,49 +195,83 @@ const HomeScreen = ({ navigation }: Props) => {
           setVerificationStatus('unverified');
           setDisplayName('User');
         }
-
       } catch (err: any) {
-        if (!isMounted) return;
         console.error('Error fetching home screen data:', err);
         setProfileError('Failed to load profile information.');
         setVerificationStatus(null);
       } finally {
-        if (isMounted) {
-          setLoadingProfile(false);
-        }
+        setLoadingProfile(false);
       }
-    };
-
-    fetchUserProfileData();
-
-    const channel = supabase
-      .channel('public:announcements:home_badge_simple')
-      .on<AnnouncementItem>(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'announcements' },
-        (payload) => {
-          console.log('Announcement change detected, showing badge:', payload);
-          if (isMounted) {
-            setShowNotificationBadge(true);
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') { console.log('Realtime channel subscribed for badge!'); }
-        if (status === 'CHANNEL_ERROR') { console.error('Realtime channel error:', err); }
-        if (status === 'TIMED_OUT') { console.warn('Realtime channel timed out.'); }
-      });
-
-    return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
-    };
+      return userIdToSet; // Return user ID for subsequent fetches if needed
   }, []);
 
-  const handleVerifyPress = () => {
-    navigation.navigate('Verification');
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      fetchInitialData();
+      
+      const channel = supabase
+        .channel('public:announcements:home_badge_simple')
+        .on<AnnouncementItem>(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'announcements' },
+          (payload) => {
+            if (isMounted) setShowNotificationBadge(true);
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') console.log('Realtime channel subscribed for badge!');
+        });
+
+      return () => {
+        isMounted = false;
+        supabase.removeChannel(channel);
+      };
+    }, [fetchInitialData])
+  );
+
+  const handleSetAvailabilityPress = async () => {
+    if (!currentUserId) {
+        // Alert.alert("Error", "User not identified. Please try again.");
+        Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified. Please try again.' });
+        return;
+    }
+    setIsSavingAvailability(true); 
+    try {
+        const videoStatus = await fetchVideoCallAvailability(currentUserId);
+        setInitialVideoCallStatus(videoStatus);
+        setAvailabilityModalVisible(true);
+    } catch (error: any) {
+        console.error("Failed to fetch availability settings", error);
+        // Alert.alert("Error", "Could not load availability settings.");
+        Toast.show({ type: 'error', text1: 'Error', text2: error?.message || 'Could not load availability settings.' });
+    }
+    setIsSavingAvailability(false);
   };
 
+  const handleSaveAvailability = async (isVideoEnabled: boolean) => {
+    if (!currentUserId) {
+        // Alert.alert("Error", "User not identified. Cannot save settings.");
+        Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified. Cannot save settings.' });
+        return;
+    }
+    setIsSavingAvailability(true);
+    try {
+        await saveServiceAvailability(currentUserId, isVideoEnabled);
+        setInitialVideoCallStatus(isVideoEnabled); 
+        // Alert.alert("Success", "Availability settings saved!");
+        Toast.show({ type: 'success', text1: 'Success', text2: 'Availability settings saved!' });
+    } catch (error: any) {
+        console.error("Failed to save availability settings", error);
+        // Alert.alert("Error", "Could not save availability settings.");
+        Toast.show({ type: 'error', text1: 'Error', text2: error?.message || 'Could not save availability settings.' });
+    } finally {
+        setIsSavingAvailability(false);
+        setAvailabilityModalVisible(false);
+    }
+  };
+
+  const handleVerifyPress = () => navigation.navigate('Verification');
   const handleNotificationPress = () => {
     setShowNotificationBadge(false);
     navigation.navigate('Announcements');
@@ -225,11 +376,11 @@ const HomeScreen = ({ navigation }: Props) => {
         <View style={styles.actionsSection}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, {backgroundColor: '#4A148C'}]}>
-                <Text style={styles.actionIconText}>🎯</Text>
+            <TouchableOpacity style={styles.actionCard} onPress={handleSetAvailabilityPress} disabled={isSavingAvailability}>
+              <View style={[styles.actionIcon, {backgroundColor: '#0D47A1'}]}>
+                {isSavingAvailability ? <ActivityIndicator size="small" color="#FFFFFF"/> : <Text style={styles.actionIconText}>⚙️</Text>}
               </View>
-              <Text style={styles.actionText}>Set Goals</Text>
+              <Text style={styles.actionText}>Set Availability</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionCard}>
               <View style={[styles.actionIcon, {backgroundColor: '#1A237E'}]}>
@@ -253,8 +404,13 @@ const HomeScreen = ({ navigation }: Props) => {
         </View>
 
         {renderVerificationBanner()}
-
       </ScrollView>
+      <AvailabilityModal 
+        visible={availabilityModalVisible} 
+        onClose={() => setAvailabilityModalVisible(false)} 
+        currentVideoStatus={initialVideoCallStatus}
+        onSave={handleSaveAvailability}
+      />
     </SafeAreaView>
   );
 };
@@ -334,7 +490,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 1,
     right: 1,
-    backgroundColor: colors.danger || '#FF5252',
+    backgroundColor: "#00BFA6",
     borderRadius: 5,
     width: 10,
     height: 10,
@@ -445,6 +601,71 @@ const styles = StyleSheet.create({
      color: '#FF5252', 
      textAlign: 'center',
      padding: spacing.md, 
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '90%',
+    maxWidth: 380,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 15,
+    padding: 25,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  availabilityItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333333',
+  },
+  availabilityLabel: {
+    fontSize: 16,
+    color: '#E0E0E0',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 25,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#424242',
+    marginRight: 10,
+  },
+  saveButton: {
+    backgroundColor: "#00BFA6",
+    marginLeft: 10,
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

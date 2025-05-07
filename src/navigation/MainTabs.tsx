@@ -13,7 +13,7 @@ import HomeScreen from '../screens/HomeScreen';
 import ChatsScreen from '../screens/ChatsScreen';
 import MenuScreen from '../screens/MenuScreen';
 import ActivityScreen from '../screens/ActivityScreen';
-import SettingsScreen from '../screens/SettingsScreen';
+import SettingsStackNavigator from './SettingsStack';
 import {TabParamList} from '../types/navigation';
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -203,7 +203,7 @@ const MainTabs = () => {
       <Tab.Screen name="Chat" component={ChatsScreen} />
       <Tab.Screen name="Menu" component={MenuScreen} />
       <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="Settings" component={SettingsStackNavigator} />
     </Tab.Navigator>
   );
 };

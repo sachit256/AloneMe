@@ -97,33 +97,54 @@ const OTPScreen = ({route, navigation}: RootStackScreenProps<'OTP'>) => {
       const { success, error, session } = await verifyOTP(phoneNumber, otpString);
 
       if (success && session) {
-        // Verification successful, proceed with creating preferences and updating state
         console.log('OTP Verified Successfully. Session:', session);
 
-        // Create user preferences using the real user ID from the session
-        const { success: prefSuccess, error: prefError } = await createUserPreferences({
-          user_id: session.user.id, // Use session user ID
-          phone_number: phoneNumber,
-          onboarding_completed: false // Assuming onboarding starts after OTP
-        });
+        // --- Check if preferences already exist --- START ---
+        console.log(`Checking for preferences for user_id: ${session.user.id}`); // Log the ID being checked
+        const { data: existingPrefs, error: checkError } = await supabase
+          .from('user_preferences')
+          .select('id') // Select a minimal column just to check existence
+          .eq('user_id', session.user.id)
+          .maybeSingle(); // Use maybeSingle() - returns null if not found, doesn't error
 
-        if (!prefSuccess) {
-          // Log preference creation error AND stop the flow
-          console.error('Critical: Failed to create user preferences:', prefError?.message || prefError);
-          Toast.show({
-             type: 'error', // Make it an error
-             text1: 'Account Setup Failed',
-             text2: 'Could not create user profile. Please try logging in again.',
-             visibilityTime: 4000 // Show longer
-          });
-          // Stop execution here; do not proceed to dispatch/navigation
-          return;
+        if (checkError) {
+            console.error('Error checking for existing user preferences:', checkError.message);
+             Toast.show({ type: 'error', text1: 'Error', text2: 'Could not verify profile status.' });
+             // Potentially return or throw to stop flow if this check fails critically
         }
 
-        // Only proceeds if prefSuccess is true
-        console.log('User preferences created successfully.'); // Add success log
+        console.log('Result of preference check:', { existingPrefs }); // Log the result
 
-        // Save all necessary user data to Redux
+        // If preferences DON'T exist, create them
+        if (!existingPrefs) {
+             console.log('No existing preferences found for user, attempting to create...');
+             const { success: prefSuccess, error: prefError } = await createUserPreferences({
+                 user_id: session.user.id,
+                 phone_number: phoneNumber,
+                 onboarding_completed: false
+             });
+
+             if (!prefSuccess) {
+                 // This is critical if creation fails
+                 console.error('Critical: Failed to create user preferences:', prefError?.message || prefError);
+                 Toast.show({
+                     type: 'error',
+                     text1: 'Account Setup Failed',
+                     text2: 'Could not create user profile. Please try logging in again.',
+                     visibilityTime: 4000
+                 });
+                 return; // Stop if we couldn't create essential profile
+             } else {
+                  console.log('User preferences created successfully.');
+             }
+        } else {
+             console.log('Existing user preferences found. Skipping creation.');
+             // Preferences already exist, no need to create.
+        }
+         // --- Check if preferences already exist --- END ---
+
+        // --- Proceed with Redux dispatch and navigation --- START ---
+        // This block now runs whether prefs were just created or already existed
         dispatch(setAuthenticated(true));
         dispatch(
           setVerificationStatus({

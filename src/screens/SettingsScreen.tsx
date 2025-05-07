@@ -8,13 +8,20 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { TabScreenProps } from '../types/navigation';
+import { SettingsStackScreenProps, RootStackParamList } from '../types/navigation';
 import { useDispatch } from 'react-redux';
 import { resetAuth } from '../store/slices/authSlice';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useUser } from '../hooks/useUser';
 
-const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
+// Type for the root stack navigation prop
+type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const SettingsScreen = ({ navigation }: SettingsStackScreenProps<'SettingsScreen'>) => {
   const dispatch = useDispatch();
+  const rootNavigation = useNavigation<RootStackNavigationProp>();
+  const { user } = useUser();
 
   const handleLogout = async () => {
     Alert.alert(
@@ -30,8 +37,8 @@ const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
           style: 'destructive',
           onPress: () => {
             dispatch(resetAuth());
-
-            navigation.dispatch(
+            // Use rootNavigation for resetting to Welcome, assuming Welcome is in RootStack
+            rootNavigation.dispatch(
               CommonActions.reset({
                 index: 0,
                 routes: [{ name: 'Welcome' }],
@@ -61,8 +68,15 @@ const SettingsScreen = ({ navigation }: TabScreenProps<'Settings'>) => {
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account</Text>
-          {renderSettingItem('Profile', 'Manage your profile information', () => { /* Navigate to Profile */ })}
-          {renderSettingItem('Verification', 'Get verified badge', () => { /* Navigate to Verification */ })}
+          {renderSettingItem('Profile', 'Manage your profile information', () => {
+            if (user?.id) {
+              rootNavigation.navigate('Profile', { userId: user.id });
+            } else {
+              Alert.alert("Error", "User information not available.");
+              console.log("User ID not available to navigate to Profile");
+            }
+          })}
+          {renderSettingItem('Verification', 'Get verified badge', () => { /* TODO: Navigate to Verification */ })}
           {renderSettingItem('Privacy', 'Control your privacy settings', () => { /* Navigate to Privacy */ })}
         </View>
         

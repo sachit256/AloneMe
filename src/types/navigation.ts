@@ -42,6 +42,16 @@ export type RootStackParamList = {
   };
   UserProfileDetail: { userId: string };
   Announcements: undefined;
+  Profile: { userId: string };
+};
+
+// New Stack Navigator for Settings flow
+export type SettingsStackParamList = {
+  SettingsScreen: undefined; // Initial screen in the Settings stack
+  // Profile: undefined; // Profile is now moved to RootStack
+  // Add other settings-related screens here if needed, e.g.,
+  // VerificationSettings: undefined;
+  // PrivacySettings: undefined;
 };
 
 export type TabParamList = {
@@ -49,17 +59,24 @@ export type TabParamList = {
   Chat: undefined;
   Menu: undefined;
   Activity: undefined;
-  Settings: undefined;
+  Settings: { screen: keyof SettingsStackParamList; params?: SettingsStackParamList[keyof SettingsStackParamList] }; // Updated for nested stack
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = {
-  navigation: any;
-  route: { params: RootStackParamList[T] };
+  navigation: NativeStackNavigationProp<RootStackParamList, T>; // Using NativeStackNavigationProp
+  route: RouteProp<RootStackParamList, T>; // Using RouteProp
 };
 
+// Prop type for screens within the SettingsStack
+export type SettingsStackScreenProps<T extends keyof SettingsStackParamList> = CompositeScreenProps<
+  NativeStackScreenProps<SettingsStackParamList, T>, // Props from the stack navigator
+  BottomTabScreenProps<TabParamList> // Props from the parent tab navigator
+>;
+
+// Updated TabScreenProps for direct screens in TabParamList
 export type TabScreenProps<T extends keyof TabParamList> = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, T>,
-  NativeStackScreenProps<RootStackParamList>
+  NativeStackScreenProps<RootStackParamList> // Assuming tabs are inside a root stack
 >;
 
 declare global {

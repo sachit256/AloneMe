@@ -38,6 +38,7 @@ import UnverifiedUsersScreen from './src/screens/UnverifiedUsersScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import UserProfileDetailScreen from './src/screens/UserProfileDetailScreen';
 import AnnouncementsScreen from './src/screens/AnnouncementsScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -140,6 +141,7 @@ const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
   Chat: ChatScreen,
   UserProfileDetail: UserProfileDetailScreen,
   Announcements: AnnouncementsScreen,
+  Profile: ProfileScreen,
 };
 
 const App = () => {

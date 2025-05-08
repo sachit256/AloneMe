@@ -15,16 +15,19 @@ import MenuScreen from '../screens/MenuScreen';
 import ActivityScreen from '../screens/ActivityScreen';
 import SettingsStackNavigator from './SettingsStack';
 import {TabParamList} from '../types/navigation';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useSelector } from 'react-redux';
+import { RootState } from '../store';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const {width} = Dimensions.get('window');
 
 const FloatingMenu = ({visible, onClose, onSelect}: any) => {
   const menuItems = [
-    {id: 'verified', label: 'Verified Users', icon: '✓'},
-    {id: 'unverified', label: 'Unverified Users', icon: '!'},
-    {id: 'premium', label: 'Premium Users', icon: '⭐'},
-    {id: 'blocked', label: 'Blocked Users', icon: '🚫'},
+    {id: 'verified', label: 'Verified Users', icon: 'check-decagram'},
+    {id: 'unverified', label: 'Unverified Users', icon: 'account-alert-outline'},
+    {id: 'premium', label: 'Premium Users', icon: 'star-outline'},
+    {id: 'blocked', label: 'Blocked Users', icon: 'block-helper'},
   ];
 
   return (
@@ -47,7 +50,7 @@ const FloatingMenu = ({visible, onClose, onSelect}: any) => {
                 onClose();
               }}>
               <View style={styles.menuIconWrapper}>
-                <Text style={styles.menuIcon}>{item.icon}</Text>
+                <Icon name={item.icon} size={22} color="#00BFA6" />
               </View>
               <Text style={styles.menuLabel}>{item.label}</Text>
             </TouchableOpacity>
@@ -73,17 +76,21 @@ const TabIcon = ({
     return (
       <View style={styles.centerTabContainer}>
         <View style={styles.fabButton}>
-          <Text style={styles.fabIcon}>{icon}</Text>
+          <Icon name={icon} size={28} color="#FFFFFF" />
         </View>
       </View>
     );
   }
 
+  // For all other tabs, including Settings, use the default style (no background)
   return (
     <View style={styles.tabIconContainer}>
-      <Text style={[styles.iconText, focused && styles.iconTextActive]}>
-        {icon}
-      </Text>
+      <Icon
+        name={icon}
+        size={24}
+        color={focused ? '#00BFA6' : '#888'}
+        style={{ marginBottom: 2 }}
+      />
       <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
         {label}
       </Text>
@@ -127,17 +134,14 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
       <View style={styles.tabBar}>
         {state.routes.map((route: any, index: number) => {
           const {options} = descriptors[route.key];
-          const label = options.title ?? route.name; // Simplified label access
+          const label = options.title ?? route.name;
 
           const isFocused = state.index === index;
-          const isCenter = index === 2; // Center tab is now the 3rd item (index 2)
+          const isCenter = route.name === 'Menu'; // Only Menu tab is center FAB
 
           const onPress = () => {
             if (isCenter) {
-              // If center button should open the menu:
               setMenuVisible(true);
-              // If center button should navigate to MenuScreen:
-              // navigation.navigate(route.name);
               return;
             }
 
@@ -154,12 +158,12 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
 
           const getIcon = (routeName: string) => {
             switch (routeName) {
-              case 'Home': return '🏠';
-              case 'Chat': return '💬';
-              case 'Menu': return '+'; // Center button icon
-              case 'Activity': return '📊';
-              case 'Settings': return '⚙️'; // Changed from Profile icon
-              default: return '?';
+              case 'Home': return 'home-outline';
+              case 'Chat': return 'chat-outline';
+              case 'Menu': return 'plus';
+              case 'Activity': return 'chart-bar';
+              case 'Settings': return 'cog-outline';
+              default: return 'help-circle-outline';
             }
           };
 
@@ -174,7 +178,7 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
               style={[styles.tab, isCenter && styles.centerTab]}>
               <TabIcon
                 focused={isFocused}
-                label={isCenter ? '' : label} // Don't show label for center button
+                label={isCenter ? '' : label}
                 icon={getIcon(route.name)}
                 isCenter={isCenter}
               />
@@ -193,17 +197,47 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
 };
 
 const MainTabs = () => {
+  const gender = useSelector((state: RootState) => state.auth.userProfile.gender);
+  const isMale = gender && gender.toLowerCase() === 'male';
+
+  // Define tabs dynamically based on gender
+  const tabs = [
+    {
+      name: 'Home',
+      component: HomeScreen,
+      options: { title: isMale ? 'Verified Users' : 'Home' },
+    },
+    {
+      name: 'Chat',
+      component: ChatsScreen,
+    },
+    // Only add Menu and Activity for non-male users
+    ...(!isMale
+      ? [
+          { name: 'Menu', component: MenuScreen },
+          { name: 'Activity', component: ActivityScreen },
+        ]
+      : []),
+    {
+      name: 'Settings',
+      component: SettingsStackNavigator,
+    },
+  ];
+
   return (
     <Tab.Navigator
       tabBar={props => <CustomTabBar {...props} />}
       screenOptions={{
         headerShown: false,
       }}>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Chat" component={ChatsScreen} />
-      <Tab.Screen name="Menu" component={MenuScreen} />
-      <Tab.Screen name="Activity" component={ActivityScreen} />
-      <Tab.Screen name="Settings" component={SettingsStackNavigator} />
+      {tabs.map(tab => (
+        <Tab.Screen
+          key={tab.name}
+          name={tab.name as any}
+          component={tab.component as any}
+          options={tab.options}
+        />
+      ))}
     </Tab.Navigator>
   );
 };

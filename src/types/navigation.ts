@@ -40,6 +40,7 @@ export type RootStackParamList = {
     userName: string;
     userId: string;
     otherUserId: string;
+    otherUserName: string;
   };
   UserProfileDetail: { userId: string };
   Announcements: undefined;

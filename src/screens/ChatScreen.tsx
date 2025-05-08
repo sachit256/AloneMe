@@ -299,7 +299,7 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
           <Icon name="chevron-left" size={28} color={themeColors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Chat with {route.params?.userName}</Text>
+          <Text style={styles.headerTitle}>Chat with {route.params?.otherUserName}</Text>
           <Text style={styles.timerText}>{formatTime(elapsedTime)}</Text>
         </View>
         <View style={styles.callButtons}>

@@ -23,6 +23,9 @@ import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { CompositeNavigationProp, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TabParamList, RootStackParamList } from '../types/navigation';
+import VerifiedUserCard from './VerifiedUserCard';
+import { useDispatch } from 'react-redux';
+import { setUserProfile } from '../store/slices/authSlice';
 
 const { width } = Dimensions.get('window');
 
@@ -150,12 +153,17 @@ const AvailabilityModal = (
 };
 
 const HomeScreen = ({ navigation }: Props) => {
+  const dispatch = useDispatch();
   const [isOnline, setIsOnline] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
   const [displayName, setDisplayName] = useState<string>('User');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [showNotificationBadge, setShowNotificationBadge] = useState(false);
+  const [gender, setGender] = useState<string | null>(null);
+  const [verifiedUsers, setVerifiedUsers] = useState<any[]>([]);
+  const [loadingVerifiedUsers, setLoadingVerifiedUsers] = useState(false);
+  const [errorVerifiedUsers, setErrorVerifiedUsers] = useState<string | null>(null);
 
   // New states for availability modal
   const [availabilityModalVisible, setAvailabilityModalVisible] = useState(false);
@@ -187,7 +195,7 @@ const HomeScreen = ({ navigation }: Props) => {
 
         const { data: profileData, error: profileFetchError } = await supabase
           .from('user_preferences')
-          .select('display_name, verification_status, is_online')
+          .select('display_name, verification_status, is_online, gender, age')
           .eq('user_id', user.id)
           .single();
 
@@ -204,6 +212,30 @@ const HomeScreen = ({ navigation }: Props) => {
           const status = profileData.verification_status as VerificationStatus;
           setVerificationStatus(status === 'unverified' || status === 'pending' || status === 'verified' ? status : 'unverified');
           setIsOnline(!!profileData.is_online);
+          setGender(profileData.gender || null);
+          // Update Redux with latest profile info
+          dispatch(setUserProfile({
+            displayName: profileData.display_name,
+            gender: profileData.gender,
+            age: profileData.age,
+            verificationStatus: profileData.verification_status,
+          }));
+          // If male, fetch verified users
+          if ((profileData.gender || '').toLowerCase() === 'male') {
+            setLoadingVerifiedUsers(true);
+            setErrorVerifiedUsers(null);
+            try {
+              const { data, error } = await supabase
+                .from('user_preferences')
+                .select('id, user_id, display_name, age, emotional_story, is_online')
+                .eq('verification_status', 'verified');
+              if (error) throw error;
+              setVerifiedUsers((data || []).filter((u: any) => u.display_name));
+            } catch (err: any) {
+              setErrorVerifiedUsers('Failed to load verified users.');
+            }
+            setLoadingVerifiedUsers(false);
+          }
         } else {
           setVerificationStatus('unverified');
           setDisplayName('User');
@@ -356,6 +388,112 @@ const HomeScreen = ({ navigation }: Props) => {
     );
   };
 
+  // Real-time subscription for is_online changes for verified users (for males)
+  useEffect(() => {
+    if (gender && gender.toLowerCase() === 'male') {
+      const channel = supabase
+        .channel('public:user_preferences:home_verified_online')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'user_preferences' },
+          (payload) => {
+            const updated = payload.new;
+            setVerifiedUsers((prev) =>
+              prev.map((user) =>
+                user.user_id === updated.user_id
+                  ? { ...user, is_online: updated.is_online }
+                  : user
+              )
+            );
+          }
+        )
+        .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [gender]);
+
+  // Conditional rendering: male users get a different dashboard
+  if (gender && gender.toLowerCase() === 'male') {
+    const handleTalkNow = (user: any) => {
+      if (!currentUserId) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified.' });
+        return;
+      }
+      if (!user.user_id) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'Selected user ID not found.' });
+        return;
+      }
+      navigation.getParent()?.navigate('Chat', {
+        userName: displayName || 'User',
+        userId: currentUserId,
+        otherUserId: user.user_id,
+        otherUserName: user.display_name || 'User',
+      });
+    };
+    const handleViewProfile = (user: any) => {
+      if (!user.user_id) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'User ID missing.' });
+        return;
+      }
+      navigation.getParent()?.navigate('UserProfileDetail', { userId: user.user_id });
+    };
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.profileSection}>
+            <View style={styles.profileHeader}>
+              <View>
+                <Text style={styles.greetingText}>{getGreeting()} 👋</Text>
+                <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
+              </View>
+              <View style={styles.headerActions}>
+                {/* No online/offline toggle for male users */}
+                <TouchableOpacity onPress={handleNotificationPress} style={styles.notificationButtonContainer}>
+                  <Icon name="bell-outline" size={26} color="#FFFFFF" />
+                  {showNotificationBadge && (
+                    <View style={styles.badge} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+          <TouchableOpacity 
+            style={styles.searchSection}
+            onPress={handleSearchPress}
+          >
+            <View style={styles.searchBarContainer}>
+              <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
+              <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* No header here, just the list */}
+          {loadingVerifiedUsers ? (
+            <ActivityIndicator size="large" color="#00BFA6" style={{ marginTop: 40 }} />
+          ) : errorVerifiedUsers ? (
+            <Text style={{ color: '#FF5252', textAlign: 'center', marginTop: 40 }}>{errorVerifiedUsers}</Text>
+          ) : (
+            verifiedUsers.length === 0 ? (
+              <Text style={{ color: '#888', textAlign: 'center', marginTop: 40 }}>No verified users found yet.</Text>
+            ) : (
+              verifiedUsers.map((item) => (
+                <VerifiedUserCard
+                  key={item.id}
+                  user={item}
+                  onTalkNow={handleTalkNow}
+                  onViewProfile={handleViewProfile}
+                />
+              ))
+            )
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // Otherwise, show the regular dashboard
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -441,26 +579,30 @@ const HomeScreen = ({ navigation }: Props) => {
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
             <TouchableOpacity style={styles.actionCard} onPress={handleSetAvailabilityPress} disabled={isSavingAvailability}>
-              <View style={[styles.actionIcon, {backgroundColor: '#0D47A1'}]}>
-                {isSavingAvailability ? <ActivityIndicator size="small" color="#FFFFFF"/> : <Text style={styles.actionIconText}>⚙️</Text>}
+              <View style={styles.actionIcon}>
+                {isSavingAvailability ? (
+                  <ActivityIndicator size="small" color="#00BFA6" />
+                ) : (
+                  <Icon name="cog" size={24} color="#00BFA6" />
+                )}
               </View>
               <Text style={styles.actionText}>Set Availability</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, {backgroundColor: '#1A237E'}]}>
-                <Text style={styles.actionIconText}>📊</Text>
+              <View style={styles.actionIcon}>
+                <Icon name="chart-bar" size={24} color="#00BFA6" />
               </View>
               <Text style={styles.actionText}>Analytics</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, {backgroundColor: '#004D40'}]}>
-                <Text style={styles.actionIconText}>💰</Text>
+              <View style={styles.actionIcon}>
+                <Icon name="cash-multiple" size={24} color="#00BFA6" />
               </View>
               <Text style={styles.actionText}>Earnings</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.actionCard}>
-              <View style={[styles.actionIcon, {backgroundColor: '#B71C1C'}]}>
-                <Text style={styles.actionIconText}>❤️</Text>
+              <View style={styles.actionIcon}>
+                <Icon name="heart-outline" size={24} color="#00BFA6" />
               </View>
               <Text style={styles.actionText}>Support</Text>
             </TouchableOpacity>
@@ -614,9 +756,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
-  },
-  actionIconText: {
-    fontSize: 20,
+    backgroundColor: 'transparent',
   },
   actionText: {
     fontSize: 14,

@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useSelector} from 'react-redux';
 import {RootState} from '../store';
 import { supabase } from '../lib/supabase'; // Adjust path to your Supabase client instance
+import VerifiedUserCard from './VerifiedUserCard';
 
 // Define theme colors or import from common styles
 const themeColors = {
@@ -146,65 +147,13 @@ const VerifiedUsersScreen = ({
     navigation.navigate('UserProfileDetail', { userId: user.user_id });
   };
 
-  const renderUserItem = ({ item }: { item: UserProfile }) => {
-    const name = item.display_name || 'Anonymous';
-    const avatarText = name.charAt(0).toUpperCase();
-    const rating = item.rating || 4.5; // Placeholder
-    const spentHours = item.spentHours || 0; // Placeholder
-
-    return (
-      <View style={styles.userCard}>
-        <View style={styles.cardTopSection}>
-          <TouchableOpacity onPress={() => handleViewProfile(item)}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{avatarText}</Text>
-                <View
-                  style={[
-                    styles.statusDot,
-                    { backgroundColor: item.is_online ? '#00C853' : '#888' },
-                  ]}
-                />
-              </View>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.userInfoContainer}>
-            <Text style={styles.userName} numberOfLines={1}>{name}</Text>
-            <View style={styles.detailsRow}>
-              <View style={styles.ratingContainer}>
-                <Icon name="star" size={14} color="#FFC107" />
-                <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
-              </View>
-              <Text style={styles.userDetails}>
-                {item.age ? ` • ${item.age} yrs` : ''}
-                {` • ${spentHours} hrs spent`}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {item.emotional_story && (
-           <Text style={styles.userStatus} numberOfLines={3}>
-              {item.emotional_story}
-           </Text>
-        )}
-         {!item.emotional_story && (
-             <Text style={[styles.userStatus, styles.userStatusPlaceholder]} numberOfLines={1}>
-                 No story shared yet.
-             </Text>
-          )}
-
-        <View style={styles.cardBottomSection}>
-           <TouchableOpacity
-             style={styles.talkButton}
-             onPress={() => handleTalkNow(item)}
-           >
-             <Text style={styles.talkButtonText}>Talk Now</Text>
-           </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+  const renderUserItem = ({ item }: { item: UserProfile }) => (
+    <VerifiedUserCard
+      user={item}
+      onTalkNow={handleTalkNow}
+      onViewProfile={handleViewProfile}
+    />
+  );
 
   if (loading) {
     return (

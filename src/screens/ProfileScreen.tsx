@@ -9,6 +9,7 @@ interface UserProfileDBData {
   display_name: string;
   date_of_birth?: string | null; 
   preferred_language?: string | null;
+  gender?: string | null;
 }
 
 
@@ -57,8 +58,8 @@ type Props = RootStackScreenProps<'Profile'>;
 async function fetchUserProfileFromDB(userId: string): Promise<UserProfileDBData> {
   console.log(`Fetching Supabase profile for userId: ${userId}`);
   const { data, error } = await supabase
-    .from('user_preferences') 
-    .select('display_name, date_of_birth, preferred_language')
+    .from('user_preferences')
+    .select('display_name, date_of_birth, preferred_language, gender')
     .eq('user_id', userId)
     .single();
 
@@ -179,11 +180,22 @@ const ProfileScreen = ({ route, navigation }: Props) => {
       </TouchableOpacity>
       <ScrollView contentContainerStyle={styles.scrollContentContainer}>
         <View style={styles.headerContainer}>
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Text style={styles.avatarPlaceholderText}>{getInitials(userProfile.display_name)}</Text>
-            </View>
-          <Text style={styles.name}>{userProfile.display_name || 'User'}</Text>
-          {userAge !== undefined && <Text style={styles.age}>{`Age: ${userAge}`}</Text>}
+          <View style={[styles.avatar, styles.avatarPlaceholder, styles.avatarRedesigned]}>
+            <Text style={styles.avatarPlaceholderText}>{getInitials(userProfile.display_name)}</Text>
+          </View>
+          <Text style={styles.nameRedesigned}>{userProfile.display_name || 'User'}</Text>
+          <View style={styles.pillsRow}>
+            {userProfile.gender && (
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>{userProfile.gender}</Text>
+              </View>
+            )}
+            {userAge !== undefined && (
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>{`Age: ${userAge}`}</Text>
+              </View>
+            )}
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -285,6 +297,11 @@ const styles = StyleSheet.create({
     color: '#888888',
     marginTop: 4,
   },
+  gender: {
+    fontSize: 16,
+    color: '#888888',
+    marginTop: 2,
+  },
   section: {
     paddingHorizontal: 20,
     paddingTop: 20,
@@ -324,6 +341,50 @@ const styles = StyleSheet.create({
     color: '#888888',
     textAlign: 'center',
     marginTop: 10,
+  },
+  avatarRedesigned: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: '#00BFA6',
+    shadowColor: '#00BFA6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    marginBottom: 18,
+  },
+  nameRedesigned: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  pillsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  pill: {
+    backgroundColor: '#00BFA6',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    marginHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 48,
+  },
+  pillText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
 });
 

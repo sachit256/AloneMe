@@ -12,11 +12,13 @@ import {Provider, useSelector} from 'react-redux';
 import {PersistGate} from 'redux-persist/integration/react';
 import {store, persistor} from './src/store';
 import {RootState} from './src/store';
-import Toast from 'react-native-toast-message';
+import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 import {useUser} from './src/hooks/useUser';
 import {getNextOnboardingScreen} from './src/utils/onboarding';
 import type {RootStackParamList} from './src/types/navigation';
 import {ActivityIndicator, View} from 'react-native';
+import type { BaseToastProps } from 'react-native-toast-message';
+import { useColorScheme } from 'react-native';
 
 // Screen Imports
 import WelcomeScreen from './src/screens/WelcomeScreen';
@@ -39,6 +41,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import UserProfileDetailScreen from './src/screens/UserProfileDetailScreen';
 import AnnouncementsScreen from './src/screens/AnnouncementsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
+import SearchScreen from './src/screens/SearchScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -48,6 +51,11 @@ const AppNavigator = () => {
     (state: RootState) => state.auth.isAuthenticated,
   );
   const [isInitialized, setIsInitialized] = React.useState(false);
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const toastBg = isDark ? '#232323' : '#fff';
+  const toastText = isDark ? '#fff' : '#232323';
 
   React.useEffect(() => {
     // Only set initialized once we have loaded the initial state
@@ -142,16 +150,74 @@ const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
   UserProfileDetail: UserProfileDetailScreen,
   Announcements: AnnouncementsScreen,
   Profile: ProfileScreen,
+  Home: MainTabs,
+  Settings: MainTabs,
+  Search: SearchScreen,
 };
 
 const App = () => {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const toastBg = isDark ? '#232323' : '#fff';
+  const toastText = isDark ? '#fff' : '#232323';
+
+  const toastConfig = {
+    success: (props: BaseToastProps) => (
+      <BaseToast
+        {...props}
+        style={{ borderLeftColor: '#00BFA6', borderRadius: 12, marginTop: 16, backgroundColor: toastBg }}
+        contentContainerStyle={{ paddingHorizontal: 15 }}
+        text1Style={{
+          fontSize: 14,
+          fontWeight: 'bold',
+          color: '#00BFA6',
+        }}
+        text2Style={{
+          fontSize: 12,
+          color: toastText,
+        }}
+      />
+    ),
+    error: (props: BaseToastProps) => (
+      <ErrorToast
+        {...props}
+        style={{ borderLeftColor: '#FF5252', borderRadius: 12, marginTop: 16, backgroundColor: toastBg }}
+        text1Style={{
+          fontSize: 14,
+          fontWeight: 'bold',
+          color: '#FF5252',
+        }}
+        text2Style={{
+          fontSize: 12,
+          color: toastText,
+        }}
+      />
+    ),
+    info: (props: BaseToastProps) => (
+      <BaseToast
+        {...props}
+        style={{ borderLeftColor: '#FFC107', borderRadius: 12, marginTop: 16, backgroundColor: toastBg }}
+        text1Style={{
+          fontSize: 14,
+          fontWeight: 'bold',
+          color: '#FFC107',
+        }}
+        text2Style={{
+          fontSize: 12,
+          color: toastText,
+        }}
+      />
+    ),
+  };
+
   return (
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>
         <NavigationContainer>
           <AppNavigator />
         </NavigationContainer>
-        <Toast />
+        <Toast config={toastConfig} topOffset={60} />
       </PersistGate>
     </Provider>
   );

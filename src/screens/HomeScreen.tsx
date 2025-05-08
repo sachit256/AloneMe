@@ -11,6 +11,8 @@ import {
   Modal,
   Switch,
   Alert,
+  TextInput,
+  Image,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
 import { TabScreenProps } from '../types/navigation';
@@ -160,6 +162,15 @@ const HomeScreen = ({ navigation }: Props) => {
   const [initialVideoCallStatus, setInitialVideoCallStatus] = useState(false);
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isUpdatingOnlineStatus, setIsUpdatingOnlineStatus] = useState(false);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Evening';
+  };
 
   const fetchInitialData = useCallback(async () => {
       setLoadingProfile(true);
@@ -176,7 +187,7 @@ const HomeScreen = ({ navigation }: Props) => {
 
         const { data: profileData, error: profileFetchError } = await supabase
           .from('user_preferences')
-          .select('display_name, verification_status')
+          .select('display_name, verification_status, is_online')
           .eq('user_id', user.id)
           .single();
 
@@ -184,6 +195,7 @@ const HomeScreen = ({ navigation }: Props) => {
           if (profileFetchError.code === 'PGRST116') {
             setVerificationStatus('unverified');
             setDisplayName('User');
+            setIsOnline(false);
           } else {
             throw profileFetchError;
           }
@@ -191,14 +203,17 @@ const HomeScreen = ({ navigation }: Props) => {
           setDisplayName(profileData.display_name || 'User');
           const status = profileData.verification_status as VerificationStatus;
           setVerificationStatus(status === 'unverified' || status === 'pending' || status === 'verified' ? status : 'unverified');
+          setIsOnline(!!profileData.is_online);
         } else {
           setVerificationStatus('unverified');
           setDisplayName('User');
+          setIsOnline(false);
         }
       } catch (err: any) {
         console.error('Error fetching home screen data:', err);
         setProfileError('Failed to load profile information.');
         setVerificationStatus(null);
+        setIsOnline(false);
       } finally {
         setLoadingProfile(false);
       }
@@ -232,7 +247,6 @@ const HomeScreen = ({ navigation }: Props) => {
 
   const handleSetAvailabilityPress = async () => {
     if (!currentUserId) {
-        // Alert.alert("Error", "User not identified. Please try again.");
         Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified. Please try again.' });
         return;
     }
@@ -243,7 +257,6 @@ const HomeScreen = ({ navigation }: Props) => {
         setAvailabilityModalVisible(true);
     } catch (error: any) {
         console.error("Failed to fetch availability settings", error);
-        // Alert.alert("Error", "Could not load availability settings.");
         Toast.show({ type: 'error', text1: 'Error', text2: error?.message || 'Could not load availability settings.' });
     }
     setIsSavingAvailability(false);
@@ -251,7 +264,6 @@ const HomeScreen = ({ navigation }: Props) => {
 
   const handleSaveAvailability = async (isVideoEnabled: boolean) => {
     if (!currentUserId) {
-        // Alert.alert("Error", "User not identified. Cannot save settings.");
         Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified. Cannot save settings.' });
         return;
     }
@@ -259,11 +271,9 @@ const HomeScreen = ({ navigation }: Props) => {
     try {
         await saveServiceAvailability(currentUserId, isVideoEnabled);
         setInitialVideoCallStatus(isVideoEnabled); 
-        // Alert.alert("Success", "Availability settings saved!");
         Toast.show({ type: 'success', text1: 'Success', text2: 'Availability settings saved!' });
     } catch (error: any) {
         console.error("Failed to save availability settings", error);
-        // Alert.alert("Error", "Could not save availability settings.");
         Toast.show({ type: 'error', text1: 'Error', text2: error?.message || 'Could not save availability settings.' });
     } finally {
         setIsSavingAvailability(false);
@@ -271,23 +281,48 @@ const HomeScreen = ({ navigation }: Props) => {
     }
   };
 
-  const handleVerifyPress = () => navigation.navigate('Verification');
+  const handleVerifyPress = () => navigation.navigate('Verification' as never);
   const handleNotificationPress = () => {
     setShowNotificationBadge(false);
-    navigation.navigate('Announcements');
+    navigation.navigate('Announcements' as never);
+  };
+
+  const handleSearchChange = (query: string) => {
+      setSearchQuery(query);
+      console.log('Search Query:', query);
+  };
+
+  const handleClearSearch = () => {
+      setSearchQuery('');
+  };
+
+  const handleSearchPress = () => {
+    navigation.navigate('Search' as never);
+  };
+
+  const renderVerifiedSection = () => {
+    if (verificationStatus !== 'verified') return null;
+    return (
+      <View style={styles.verifiedSection}>
+        <View style={styles.verifiedBadge}>
+          <Icon name="check-decagram" size={28} color="#00BFA6" />
+          <Text style={styles.verifiedText}>Your profile is verified!</Text>
+        </View>
+      </View>
+    );
   };
 
   const renderVerificationBanner = () => {
+    if (verificationStatus === 'verified') {
+      return null;
+    }
+
     if (loadingProfile) {
       return (
         <View style={styles.verificationBanner}>
            <ActivityIndicator color="#00BFA6" />
         </View>
       );
-    }
-
-    if (profileError || verificationStatus === 'verified') {
-      return null;
     }
 
     if (verificationStatus === 'pending') {
@@ -327,19 +362,39 @@ const HomeScreen = ({ navigation }: Props) => {
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
             <View>
-              <Text style={styles.greetingText}>Good Evening 👋</Text>
+              <Text style={styles.greetingText}>{getGreeting()} 👋</Text>
               <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
             </View>
             <View style={styles.headerActions}>
                 <TouchableOpacity
                   style={[styles.statusToggle, isOnline && styles.statusToggleActive]}
-                  onPress={() => setIsOnline(!isOnline)}>
-                  <View
-                    style={[
-                      styles.toggleHandle,
-                      isOnline && styles.toggleHandleActive,
-                    ]}
-                  />
+                  onPress={async () => {
+                    if (!currentUserId || isUpdatingOnlineStatus) return;
+                    setIsUpdatingOnlineStatus(true);
+                    const newStatus = !isOnline;
+                    const { error } = await supabase
+                      .from('user_preferences')
+                      .update({ is_online: newStatus })
+                      .eq('user_id', currentUserId);
+                    if (error) {
+                      console.error('Failed to update online status:', error);
+                      Toast.show({ type: 'error', text1: 'Error', text2: 'Failed to update online status.' });
+                      setIsUpdatingOnlineStatus(false);
+                      return;
+                    }
+                    setIsOnline(newStatus);
+                    setIsUpdatingOnlineStatus(false);
+                  }}>
+                  {isUpdatingOnlineStatus ? (
+                    <ActivityIndicator size="small" color={isOnline ? '#00BFA6' : '#FF5252'} style={{ marginRight: 8 }} />
+                  ) : (
+                    <View
+                      style={[
+                        styles.toggleHandle,
+                        isOnline && styles.toggleHandleActive,
+                      ]}
+                    />
+                  )}
                   <Text style={[styles.statusText, isOnline && styles.statusTextActive]}>
                     {isOnline ? 'Online' : 'Offline'}
                   </Text>
@@ -353,6 +408,15 @@ const HomeScreen = ({ navigation }: Props) => {
             </View>
           </View>
         </View>
+        <TouchableOpacity 
+          style={styles.searchSection}
+          onPress={handleSearchPress}
+        >
+          <View style={styles.searchBarContainer}>
+            <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
+            <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
+          </View>
+        </TouchableOpacity>
 
         <ScrollView
           horizontal
@@ -403,7 +467,7 @@ const HomeScreen = ({ navigation }: Props) => {
           </View>
         </View>
 
-        {renderVerificationBanner()}
+        {verificationStatus === 'verified' ? renderVerifiedSection() : renderVerificationBanner()}
       </ScrollView>
       <AvailabilityModal 
         visible={availabilityModalVisible} 
@@ -666,6 +730,47 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  searchSection: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: spacing.sm,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: spacing.sm,
+  },
+  searchPlaceholder: {
+    ...typography.body1,
+    color: colors.text.secondary,
+  },
+  verifiedSection: {
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 10,
+    padding: 16,
+    backgroundColor: '#182C22',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#00BFA6',
+    alignItems: 'center',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  verifiedText: {
+    fontSize: 16,
+    color: '#00BFA6',
+    fontWeight: '600',
+    marginLeft: 10,
   },
 });
 

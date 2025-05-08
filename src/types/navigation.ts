@@ -2,6 +2,7 @@ import {CompositeScreenProps} from '@react-navigation/native';
 import {RouteProp} from '@react-navigation/native';
 import {BottomTabScreenProps} from '@react-navigation/bottom-tabs';
 import {NativeStackScreenProps, NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 
 export type RootStackParamList = {
   Welcome: undefined;
@@ -43,6 +44,9 @@ export type RootStackParamList = {
   UserProfileDetail: { userId: string };
   Announcements: undefined;
   Profile: { userId: string };
+  Home: undefined;
+  Settings: undefined;
+  Search: undefined;
 };
 
 // New Stack Navigator for Settings flow
@@ -60,6 +64,7 @@ export type TabParamList = {
   Menu: undefined;
   Activity: undefined;
   Settings: { screen: keyof SettingsStackParamList; params?: SettingsStackParamList[keyof SettingsStackParamList] }; // Updated for nested stack
+  Profile: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> = {

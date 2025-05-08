@@ -166,8 +166,45 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
     }
   };
 
-  const handleVideoCall = () => {
-    // Implement video call functionality
+  const handleVideoCall = async () => {
+    // Get the recipient's user ID (otherUserId from route params)
+    const recipientId = route.params?.otherUserId;
+    if (!recipientId) {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Recipient not found.',
+      });
+      return;
+    }
+
+    // Check video call availability
+    const { data, error } = await supabase
+      .from('user_service_availability')
+      .select('is_available')
+      .eq('user_id', recipientId)
+      .eq('service_type', 'VideoCall')
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Could not check user availability.',
+      });
+      return;
+    }
+
+    if (!data?.is_available) {
+      Toast.show({
+        type: 'info',
+        text1: 'Not Available',
+        text2: 'User is not available for video call.',
+      });
+      return;
+    }
+
+    // If available, proceed with your video call logic
     console.log('Video call initiated');
   };
 

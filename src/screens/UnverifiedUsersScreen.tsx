@@ -33,6 +33,7 @@ type UserProfile = {
   user_id: string; // Foreign key to auth.users
   display_name: string | null;
   age: number | null;
+  is_online?: boolean;
 };
 
 // Component name and prop type updated
@@ -63,7 +64,7 @@ const UnverifiedUsersScreen = ({
         // 2. Build the query
         let query = supabase
           .from('user_preferences')
-          .select('id, user_id, display_name, age')
+          .select('id, user_id, display_name, age, is_online')
           // Fetch 'unverified' users instead of 'verified'
           .eq('verification_status', 'unverified');
 
@@ -93,6 +94,29 @@ const UnverifiedUsersScreen = ({
     };
 
     fetchUnverifiedUsers();
+
+    // Real-time subscription for is_online changes
+    const channel = supabase
+      .channel('public:user_preferences:unverified_online')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_preferences' },
+        (payload) => {
+          const updated = payload.new;
+          setUnverifiedUsers((prev) =>
+            prev.map((user) =>
+              user.user_id === updated.user_id
+                ? { ...user, is_online: updated.is_online }
+                : user
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // handleTalkNow remains the same logic
@@ -128,6 +152,12 @@ const UnverifiedUsersScreen = ({
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{avatarText}</Text>
+            <View
+              style={[
+                styles.statusDot,
+                { backgroundColor: item.is_online ? '#00C853' : '#888' },
+              ]}
+            />
           </View>
         </View>
 
@@ -249,11 +279,22 @@ const styles = StyleSheet.create({
     backgroundColor: themeColors.surface,
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
   avatarText: {
     color: themeColors.primary,
     fontSize: 18,
     fontWeight: '600',
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: themeColors.background,
   },
   userInfoContainer: {
     flex: 1,

@@ -32,8 +32,8 @@ type UserProfile = {
   user_id: string; // Foreign key to auth.users
   display_name: string | null;
   age: number | null;
-  emotional_story: string | null; // Add emotional_story
-  // Add placeholders for future data
+  emotional_story: string | null;
+  is_online?: boolean;
   rating?: number | null;
   spentHours?: number | null;
 };
@@ -63,8 +63,8 @@ const VerifiedUsersScreen = ({
         // 2. Build the query
         let query = supabase
           .from('user_preferences')
-          // Select the new field 'emotional_story'
-          .select('id, user_id, display_name, age, emotional_story')
+          // Select the new field 'emotional_story' and is_online
+          .select('id, user_id, display_name, age, emotional_story, is_online')
           .eq('verification_status', 'verified');
 
         // 3. Add filter to exclude the current user IF we got their ID
@@ -93,6 +93,29 @@ const VerifiedUsersScreen = ({
     };
 
     fetchVerifiedUsers();
+
+    // Real-time subscription for is_online changes
+    const channel = supabase
+      .channel('public:user_preferences:verified_online')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_preferences' },
+        (payload) => {
+          const updated = payload.new;
+          setVerifiedUsers((prev) =>
+            prev.map((user) =>
+              user.user_id === updated.user_id
+                ? { ...user, is_online: updated.is_online }
+                : user
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleTalkNow = (user: UserProfile) => {
@@ -136,6 +159,12 @@ const VerifiedUsersScreen = ({
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{avatarText}</Text>
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: item.is_online ? '#00C853' : '#888' },
+                  ]}
+                />
               </View>
             </View>
           </TouchableOpacity>
@@ -279,6 +308,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#333', // Slightly different avatar bg
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
   avatarText: {
     color: themeColors.primary,
@@ -359,6 +389,16 @@ const styles = StyleSheet.create({
      color: themeColors.textSecondary,
      ...typography.body,
      textAlign: 'center',
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#1E1E1E',
   },
 });
 

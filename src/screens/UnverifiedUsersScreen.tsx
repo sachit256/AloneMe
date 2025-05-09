@@ -16,6 +16,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { supabase } from '../lib/supabase';
+import { getOrCreateChatSession } from '../lib/chat';
 
 // Theme colors (keep consistent or import)
 const themeColors = {
@@ -42,7 +43,7 @@ const UnverifiedUsersScreen = ({
   // Update the screen name in RootStackScreenProps
 }: RootStackScreenProps<'UnverifiedUsers'>) => {
   // State remains similar, adjust names if preferred
-  const userPhoneNumber = useSelector((state: RootState) => state.auth.userProfile.phoneNumber);
+  const userId = useSelector((state: RootState) => state.auth.userProfile.userId);
   const [unverifiedUsers, setUnverifiedUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -120,21 +121,27 @@ const UnverifiedUsersScreen = ({
   }, []);
 
   // handleTalkNow remains the same logic
-  const handleTalkNow = (user: UserProfile) => {
-    if (!userPhoneNumber) {
-      console.error('Current user phone number not found');
+  const handleTalkNow = async (user: UserProfile) => {
+    if (!userId) {
+      console.error('Current user ID not found');
       return;
     }
     if (!user.user_id) {
        console.error('Selected user ID not found');
        return;
     }
-
-    navigation.navigate('Chat', {
-      userName: user.display_name || 'User',
-      userId: userPhoneNumber,
-      otherUserId: user.user_id,
-    });
+    try {
+      const chatId = await getOrCreateChatSession(userId, user.user_id);
+      navigation.navigate('Chat', {
+        chatId,
+        userName: user.display_name || 'User',
+        userId: userId,
+        otherUserId: user.user_id,
+        otherUserName: user.display_name || 'User',
+      });
+    } catch (err) {
+      console.error('Could not start chat', err);
+    }
   };
 
   // renderUserItem remains the same structure

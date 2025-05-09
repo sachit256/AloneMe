@@ -37,6 +37,7 @@ export type RootStackParamList = {
   VerifiedUsers: undefined;
   UnverifiedUsers: undefined;
   Chat: { 
+    chatId: string;
     userName: string;
     userId: string;
     otherUserId: string;

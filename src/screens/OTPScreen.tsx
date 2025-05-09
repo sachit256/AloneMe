@@ -154,9 +154,8 @@ const OTPScreen = ({route, navigation}: RootStackScreenProps<'OTP'>) => {
         );
         dispatch(
           setUserProfile({
-            // Set phone number and potentially other details from session if available
+            userId: session.user.id,
             phoneNumber: phoneNumber,
-            // Example: You might get email from session.user.email etc.
           }),
         );
 

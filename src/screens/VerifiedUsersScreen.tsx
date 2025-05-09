@@ -15,6 +15,7 @@ import {useSelector} from 'react-redux';
 import {RootState} from '../store';
 import { supabase } from '../lib/supabase'; // Adjust path to your Supabase client instance
 import VerifiedUserCard from './VerifiedUserCard';
+import { getOrCreateChatSession } from '../lib/chat';
 
 // Define theme colors or import from common styles
 const themeColors = {
@@ -42,7 +43,7 @@ type UserProfile = {
 const VerifiedUsersScreen = ({
   navigation,
 }: RootStackScreenProps<'VerifiedUsers'>) => {
-  const userPhoneNumber = useSelector((state: RootState) => state.auth.userProfile.phoneNumber);
+  const userId = useSelector((state: RootState) => state.auth.userProfile.userId);
   const [verifiedUsers, setVerifiedUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,23 +120,27 @@ const VerifiedUsersScreen = ({
     };
   }, []);
 
-  const handleTalkNow = (user: UserProfile) => {
-    if (!userPhoneNumber) {
-      console.error('Current user phone number not found');
-      // Optionally show an alert to the user
+  const handleTalkNow = async (user: UserProfile) => {
+    if (!userId) {
+      console.error('Current user ID not found');
       return;
     }
     if (!user.user_id) {
        console.error('Selected user ID not found');
-       // Optionally show an alert to the user
        return;
     }
-
-    navigation.navigate('Chat', {
-      userName: user.display_name || 'User',
-      userId: userPhoneNumber, // Assuming this is the identifier for the *current* user in chat
-      otherUserId: user.user_id, // Use user_id (auth ID) or id (profile ID) depending on Chat screen needs
-    });
+    try {
+      const chatId = await getOrCreateChatSession(userId, user.user_id);
+      navigation.navigate('Chat', {
+        chatId,
+        userName: user.display_name || 'User',
+        userId: userId,
+        otherUserId: user.user_id,
+        otherUserName: user.display_name || 'User',
+      });
+    } catch (err) {
+      console.error('Could not start chat', err);
+    }
   };
 
   // Navigation handler for the avatar

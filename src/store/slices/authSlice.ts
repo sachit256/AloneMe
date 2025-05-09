@@ -2,6 +2,7 @@ import {createSlice, PayloadAction} from '@reduxjs/toolkit';
 import { supabase } from '../../lib/supabase';
 
 export interface UserProfile {
+  userId?: string;
   name?: string;
   displayName?: string;
   age?: number;

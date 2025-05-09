@@ -18,6 +18,7 @@ import {TabParamList} from '../types/navigation';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
+import { useUnreadChats } from '../lib/useUnreadChats';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 const {width} = Dimensions.get('window');
@@ -99,7 +100,10 @@ const TabIcon = ({
 };
 
 const CustomTabBar = ({state, descriptors, navigation}: any) => {
+  console.log('CustomTabBar rendered');
   const [menuVisible, setMenuVisible] = useState(false);
+  const currentUserId = useSelector((state: RootState) => state.auth.userProfile.userId);
+  const { unreadCount } = useUnreadChats((currentUserId ?? null) as string | null);
 
   const handleMenuSelect = (itemId: string) => {
     console.log('Selected:', itemId);
@@ -138,6 +142,7 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
 
           const isFocused = state.index === index;
           const isCenter = route.name === 'Menu'; // Only Menu tab is center FAB
+          const isChatTab = route.name === 'Chat';
 
           const onPress = () => {
             if (isCenter) {
@@ -175,13 +180,18 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
               accessibilityLabel={options.tabBarAccessibilityLabel}
               testID={options.tabBarTestID}
               onPress={onPress}
-              style={[styles.tab, isCenter && styles.centerTab]}>
+              style={[styles.tab, isCenter && styles.centerTab]}
+            >
               <TabIcon
                 focused={isFocused}
                 label={isCenter ? '' : label}
                 icon={getIcon(route.name)}
                 isCenter={isCenter}
               />
+              {/* Render unread badge on Chat tab */}
+              {isChatTab && unreadCount > 0 && (
+                <View style={styles.tabBadge} />
+              )}
             </TouchableOpacity>
           );
         })}
@@ -210,6 +220,7 @@ const MainTabs = () => {
     {
       name: 'Chat',
       component: ChatsScreen,
+      options: { title: 'Chats' },
     },
     // Only add Menu and Activity for non-male users
     ...(!isMale
@@ -359,6 +370,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#FFFFFF',
     fontWeight: '500',
+  },
+  tabBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 28,
+    backgroundColor: '#00BFA6',
+    borderRadius: 6,
+    width: 12,
+    height: 12,
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+    zIndex: 10,
   },
 });
 

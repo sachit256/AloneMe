@@ -24,8 +24,10 @@ import { CompositeNavigationProp, useFocusEffect } from '@react-navigation/nativ
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { TabParamList, RootStackParamList } from '../types/navigation';
 import VerifiedUserCard from './VerifiedUserCard';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { setUserProfile } from '../store/slices/authSlice';
+import { getOrCreateChatSession } from '../lib/chat';
+import { RootState } from '../store';
 
 const { width } = Dimensions.get('window');
 
@@ -157,13 +159,14 @@ const HomeScreen = ({ navigation }: Props) => {
   const [isOnline, setIsOnline] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
   const [displayName, setDisplayName] = useState<string>('User');
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loadingVerifiedUsers, setLoadingVerifiedUsers] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [showNotificationBadge, setShowNotificationBadge] = useState(false);
   const [gender, setGender] = useState<string | null>(null);
   const [verifiedUsers, setVerifiedUsers] = useState<any[]>([]);
-  const [loadingVerifiedUsers, setLoadingVerifiedUsers] = useState(false);
   const [errorVerifiedUsers, setErrorVerifiedUsers] = useState<string | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // New states for availability modal
   const [availabilityModalVisible, setAvailabilityModalVisible] = useState(false);
@@ -181,81 +184,101 @@ const HomeScreen = ({ navigation }: Props) => {
   };
 
   const fetchInitialData = useCallback(async () => {
+    // Only show loading on first load
+    if (!initialLoadComplete) {
       setLoadingProfile(true);
-      setProfileError(null);
-      let userIdToSet: string | null = null;
+    }
+    setProfileError(null);
+    let userIdToSet: string | null = null;
 
-      try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-          throw authError || new Error('User not authenticated');
-        }
-        userIdToSet = user.id;
-        setCurrentUserId(user.id);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw authError || new Error('User not authenticated');
+      }
+      userIdToSet = user.id;
+      setCurrentUserId(user.id);
 
-        const { data: profileData, error: profileFetchError } = await supabase
-          .from('user_preferences')
-          .select('display_name, verification_status, is_online, gender, age')
-          .eq('user_id', user.id)
-          .single();
+      const { data: profileData, error: profileFetchError } = await supabase
+        .from('user_preferences')
+        .select('display_name, verification_status, is_online, gender, age')
+        .eq('user_id', user.id)
+        .single();
 
-        if (profileFetchError) {
-          if (profileFetchError.code === 'PGRST116') {
-            setVerificationStatus('unverified');
-            setDisplayName('User');
-            setIsOnline(false);
-          } else {
-            throw profileFetchError;
-          }
-        } else if (profileData) {
-          setDisplayName(profileData.display_name || 'User');
-          const status = profileData.verification_status as VerificationStatus;
-          setVerificationStatus(status === 'unverified' || status === 'pending' || status === 'verified' ? status : 'unverified');
-          setIsOnline(!!profileData.is_online);
-          setGender(profileData.gender || null);
-          // Update Redux with latest profile info
-          dispatch(setUserProfile({
-            displayName: profileData.display_name,
-            gender: profileData.gender,
-            age: profileData.age,
-            verificationStatus: profileData.verification_status,
-          }));
-          // If male, fetch verified users
-          if ((profileData.gender || '').toLowerCase() === 'male') {
-            setLoadingVerifiedUsers(true);
-            setErrorVerifiedUsers(null);
-            try {
-              const { data, error } = await supabase
-                .from('user_preferences')
-                .select('id, user_id, display_name, age, emotional_story, is_online')
-                .eq('verification_status', 'verified');
-              if (error) throw error;
-              setVerifiedUsers((data || []).filter((u: any) => u.display_name));
-            } catch (err: any) {
-              setErrorVerifiedUsers('Failed to load verified users.');
-            }
-            setLoadingVerifiedUsers(false);
-          }
-        } else {
+      if (profileFetchError) {
+        if (profileFetchError.code === 'PGRST116') {
           setVerificationStatus('unverified');
           setDisplayName('User');
           setIsOnline(false);
+        } else {
+          throw profileFetchError;
         }
-      } catch (err: any) {
-        console.error('Error fetching home screen data:', err);
-        setProfileError('Failed to load profile information.');
-        setVerificationStatus(null);
+      } else if (profileData) {
+        // Update state only if values have changed
+        if (profileData.display_name !== displayName) {
+          setDisplayName(profileData.display_name || 'User');
+        }
+        const status = profileData.verification_status as VerificationStatus;
+        if (status !== verificationStatus) {
+          setVerificationStatus(status === 'unverified' || status === 'pending' || status === 'verified' ? status : 'unverified');
+        }
+        if (profileData.is_online !== isOnline) {
+          setIsOnline(!!profileData.is_online);
+        }
+        if (profileData.gender !== gender) {
+          setGender(profileData.gender || null);
+        }
+
+        // Update Redux with latest profile info
+        dispatch(setUserProfile({
+          displayName: profileData.display_name,
+          gender: profileData.gender,
+          age: profileData.age,
+          verificationStatus: profileData.verification_status,
+        }));
+
+        // If male, fetch verified users only if not already loaded or on first load
+        if ((profileData.gender || '').toLowerCase() === 'male' && 
+            (verifiedUsers.length === 0 || !initialLoadComplete)) {
+          setLoadingVerifiedUsers(true);
+          setErrorVerifiedUsers(null);
+          try {
+            const { data, error } = await supabase
+              .from('user_preferences')
+              .select('id, user_id, display_name, age, emotional_story, is_online')
+              .eq('verification_status', 'verified');
+            if (error) throw error;
+            setVerifiedUsers((data || []).filter((u: any) => u.display_name));
+          } catch (err: any) {
+            setErrorVerifiedUsers('Failed to load verified users.');
+          }
+          setLoadingVerifiedUsers(false);
+        }
+      } else {
+        setVerificationStatus('unverified');
+        setDisplayName('User');
         setIsOnline(false);
-      } finally {
-        setLoadingProfile(false);
       }
-      return userIdToSet; // Return user ID for subsequent fetches if needed
-  }, []);
+    } catch (err: any) {
+      console.error('Error fetching home screen data:', err);
+      setProfileError('Failed to load profile information.');
+      setVerificationStatus(null);
+      setIsOnline(false);
+    } finally {
+      setLoadingProfile(false);
+      setInitialLoadComplete(true);
+    }
+    return userIdToSet;
+  }, [dispatch, displayName, gender, isOnline, verificationStatus, verifiedUsers.length, initialLoadComplete]);
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-      fetchInitialData();
+      
+      // Only fetch if we haven't loaded initially or if we need to refresh
+      if (!initialLoadComplete) {
+        fetchInitialData();
+      }
       
       const channel = supabase
         .channel('public:announcements:home_badge_simple')
@@ -270,11 +293,35 @@ const HomeScreen = ({ navigation }: Props) => {
           if (status === 'SUBSCRIBED') console.log('Realtime channel subscribed for badge!');
         });
 
+      // Set up real-time subscription for profile updates
+      const profileChannel = supabase
+        .channel('public:user_preferences:profile')
+        .on(
+          'postgres_changes',
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'user_preferences',
+            filter: `user_id=eq.${currentUserId}`
+          },
+          (payload) => {
+            if (isMounted && payload.new) {
+              const newData = payload.new;
+              setDisplayName(newData.display_name || 'User');
+              setVerificationStatus(newData.verification_status || 'unverified');
+              setIsOnline(!!newData.is_online);
+              setGender(newData.gender || null);
+            }
+          }
+        )
+        .subscribe();
+
       return () => {
         isMounted = false;
         supabase.removeChannel(channel);
+        supabase.removeChannel(profileChannel);
       };
-    }, [fetchInitialData])
+    }, [fetchInitialData, currentUserId, initialLoadComplete])
   );
 
   const handleSetAvailabilityPress = async () => {
@@ -416,7 +463,7 @@ const HomeScreen = ({ navigation }: Props) => {
 
   // Conditional rendering: male users get a different dashboard
   if (gender && gender.toLowerCase() === 'male') {
-    const handleTalkNow = (user: any) => {
+    const handleTalkNow = async (user: any) => {
       if (!currentUserId) {
         Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified.' });
         return;
@@ -425,12 +472,18 @@ const HomeScreen = ({ navigation }: Props) => {
         Toast.show({ type: 'error', text1: 'Error', text2: 'Selected user ID not found.' });
         return;
       }
-      navigation.getParent()?.navigate('Chat', {
-        userName: displayName || 'User',
-        userId: currentUserId,
-        otherUserId: user.user_id,
-        otherUserName: user.display_name || 'User',
-      });
+      try {
+        const chatId = await getOrCreateChatSession(currentUserId, user.user_id);
+        navigation.getParent()?.navigate('Chat', {
+          chatId,
+          userName: displayName || 'User',
+          userId: currentUserId,
+          otherUserId: user.user_id,
+          otherUserName: user.display_name || 'User',
+        });
+      } catch (err) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'Could not start chat.' });
+      }
     };
     const handleViewProfile = (user: any) => {
       if (!user.user_id) {

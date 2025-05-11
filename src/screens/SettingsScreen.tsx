@@ -14,6 +14,7 @@ import { resetAuth } from '../store/slices/authSlice';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useUser } from '../hooks/useUser';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Type for the root stack navigation prop
 type RootStackNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -88,11 +89,10 @@ const SettingsScreen = ({ navigation }: SettingsStackScreenProps<'SettingsScreen
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
-          {renderSettingItem('Help Center', undefined, () => { /* Navigate to Help */ })}
-          {renderSettingItem('Contact Us', undefined, () => { /* Navigate to Contact */ })}
-          {renderSettingItem('Terms of Service', undefined, () => { /* Navigate to Terms */ })}
-          {renderSettingItem('Privacy Policy', undefined, () => { /* Navigate to Policy */ })}
+          <Text style={styles.sectionTitle}>Legal & Support</Text>
+          {renderSettingItem('Terms of Service', undefined, () => rootNavigation.navigate('TermsOfService'))}
+          {renderSettingItem('Privacy Policy', undefined, () => rootNavigation.navigate('PrivacyPolicy'))}
+          {renderSettingItem('Contact Us', undefined, () => rootNavigation.navigate('ContactUs'))}
         </View>
 
         <View style={styles.section}>

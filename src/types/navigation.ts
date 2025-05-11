@@ -49,15 +49,22 @@ export type RootStackParamList = {
   Home: undefined;
   Settings: undefined;
   Search: undefined;
+  VideoCall: {
+    userId: string;
+    otherUserId: string;
+  };
+  VoiceCall: {
+    userId: string;
+    otherUserId: string;
+  };
+  TermsOfService: undefined;
+  PrivacyPolicy: undefined;
+  ContactUs: undefined;
 };
 
 // New Stack Navigator for Settings flow
 export type SettingsStackParamList = {
-  SettingsScreen: undefined; // Initial screen in the Settings stack
-  // Profile: undefined; // Profile is now moved to RootStack
-  // Add other settings-related screens here if needed, e.g.,
-  // VerificationSettings: undefined;
-  // PrivacySettings: undefined;
+  SettingsScreen: undefined;
 };
 
 export type TabParamList = {

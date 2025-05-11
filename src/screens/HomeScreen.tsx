@@ -28,6 +28,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { setUserProfile } from '../store/slices/authSlice';
 import { getOrCreateChatSession } from '../lib/chat';
 import { RootState } from '../store';
+import { getListenerHours } from '../utils/sessionTracking';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +43,8 @@ type HomeScreenNavigationProp = CompositeNavigationProp<
 type Props = {
   navigation: HomeScreenNavigationProp;
 };
+
+type CommunicationType = 'chat' | 'call' | 'video';
 
 // --- Supabase Service Functions ---
 
@@ -154,12 +157,142 @@ const AvailabilityModal = (
     );
 };
 
+const NotifyModal = ({
+  visible,
+  onClose,
+  onSend,
+  message,
+  setMessage,
+  selectedUser,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSend: () => void;
+  message: string;
+  setMessage: (text: string) => void;
+  selectedUser: any;
+}) => {
+  const [selectedOption, setSelectedOption] = useState<CommunicationType>('chat');
+
+  useEffect(() => {
+    const listenerName = selectedUser?.display_name || '';
+    const messages: Record<CommunicationType, string> = {
+      chat: `Hi ${listenerName}! I noticed you're offline. Would love to chat when you're back online! 💭`,
+      call: `Hi ${listenerName}! I'd like to have a voice call with you when you're available. Looking forward to connecting! 📞`,
+      video: `Hi ${listenerName}! I'd love to have a video call with you when you're back online. Can't wait to meet you! 📹`
+    };
+    setMessage(messages[selectedOption]);
+  }, [selectedOption, setMessage, selectedUser]);
+
+  if (!visible) return null;
+
+  const CommunicationOption = ({ 
+    type, 
+    icon, 
+    label 
+  }: { 
+    type: CommunicationType, 
+    icon: string, 
+    label: string 
+  }) => (
+    <TouchableOpacity 
+      style={[
+        styles.communicationOption,
+        selectedOption === type && styles.communicationOptionSelected
+      ]}
+      onPress={() => setSelectedOption(type)}
+    >
+      <View style={[
+        styles.radioOuter,
+        selectedOption === type && styles.radioOuterSelected
+      ]}>
+        {selectedOption === type && <View style={styles.radioInner} />}
+      </View>
+      <View style={styles.optionContent}>
+        <Icon name={icon} size={24} color={selectedOption === type ? "#00BFA6" : "#888"} />
+        <Text style={[
+          styles.optionText,
+          selectedOption === type && styles.optionTextSelected
+        ]}>{label}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={onClose}
+      >
+        <TouchableOpacity 
+          activeOpacity={1} 
+          style={[styles.modalContainer, styles.notifyModalContainer]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Listener is Offline</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Icon name="close" size={24} color="#888" />
+            </TouchableOpacity>
+          </View>
+          
+          <Text style={styles.modalSubtitle}>Send message instead?</Text>
+          
+          <View style={styles.communicationOptions}>
+            <CommunicationOption 
+              type="chat" 
+              icon="chat-outline" 
+              label="Chat" 
+            />
+            <CommunicationOption 
+              type="call" 
+              icon="phone" 
+              label="Voice Call" 
+            />
+            <CommunicationOption 
+              type="video" 
+              icon="video" 
+              label="Video Call" 
+            />
+          </View>
+
+          <Text style={styles.messageLabel}>Your message:</Text>
+          <TextInput
+            style={styles.messageInput}
+            placeholder="Type your message..."
+            placeholderTextColor="#888"
+            value={message}
+            onChangeText={setMessage}
+            multiline
+            numberOfLines={3}
+          />
+
+          <TouchableOpacity 
+            style={[styles.sendMessageButton, !message.trim() && styles.sendMessageButtonDisabled]} 
+            onPress={onSend}
+            disabled={!message.trim()}
+          >
+            <Icon name="send" size={20} color="#FFFFFF" style={styles.sendIcon} />
+            <Text style={styles.sendMessageButtonText}>Send Notification</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+};
+
 const HomeScreen = ({ navigation }: Props) => {
   const dispatch = useDispatch();
   const [isOnline, setIsOnline] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>(null);
   const [displayName, setDisplayName] = useState<string>('User');
-  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingVerifiedUsers, setLoadingVerifiedUsers] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [showNotificationBadge, setShowNotificationBadge] = useState(false);
@@ -176,11 +309,65 @@ const HomeScreen = ({ navigation }: Props) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isUpdatingOnlineStatus, setIsUpdatingOnlineStatus] = useState(false);
 
+  const [notifyModalVisible, setNotifyModalVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [notifyMessage, setNotifyMessage] = useState('');
+
+  const [alonemeUserId, setAlonemeUserId] = useState<string>('');
+
+  const [totalHoursSpent, setTotalHoursSpent] = useState(0);
+  const [sessionStats, setSessionStats] = useState({
+    chatHours: 0,
+    callHours: 0,
+    videoHours: 0,
+    totalSessions: 0
+  });
+
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
     if (hour < 18) return 'Good Afternoon';
     return 'Good Evening';
+  };
+
+  const fetchSessionStats = async (userId: string) => {
+    try {
+      // Fetch total sessions count and hours by type
+      const { data, error } = await supabase
+        .from('session_logs')
+        .select('session_type, duration_minutes')
+        .eq('listener_id', userId)
+        .not('duration_minutes', 'is', null);
+
+      if (error) throw error;
+
+      const stats = {
+        chatHours: 0,
+        callHours: 0,
+        videoHours: 0,
+        totalSessions: data?.length || 0
+      };
+
+      data?.forEach(session => {
+        const hours = (session.duration_minutes || 0) / 60;
+        switch (session.session_type) {
+          case 'chat':
+            stats.chatHours += hours;
+            break;
+          case 'call':
+            stats.callHours += hours;
+            break;
+          case 'video':
+            stats.videoHours += hours;
+            break;
+        }
+      });
+
+      setSessionStats(stats);
+      setTotalHoursSpent(stats.chatHours + stats.callHours + stats.videoHours);
+    } catch (err) {
+      console.error('Error fetching session stats:', err);
+    }
   };
 
   const fetchInitialData = useCallback(async () => {
@@ -201,9 +388,13 @@ const HomeScreen = ({ navigation }: Props) => {
 
       const { data: profileData, error: profileFetchError } = await supabase
         .from('user_preferences')
-        .select('display_name, verification_status, is_online, gender, age')
+        .select('display_name, verification_status, is_online, gender, age, aloneme_user_id')
         .eq('user_id', user.id)
         .single();
+
+      if (profileData?.gender?.toLowerCase() === 'female') {
+        await fetchSessionStats(user.id);
+      }
 
       if (profileFetchError) {
         if (profileFetchError.code === 'PGRST116') {
@@ -217,6 +408,9 @@ const HomeScreen = ({ navigation }: Props) => {
         // Update state only if values have changed
         if (profileData.display_name !== displayName) {
           setDisplayName(profileData.display_name || 'User');
+        }
+        if (profileData.aloneme_user_id) {
+          setAlonemeUserId(profileData.aloneme_user_id);
         }
         const status = profileData.verification_status as VerificationStatus;
         if (status !== verificationStatus) {
@@ -379,6 +573,52 @@ const HomeScreen = ({ navigation }: Props) => {
     navigation.navigate('Search' as never);
   };
 
+  const handleNotifyUser = (user: any) => {
+    setSelectedUser(user);
+    setNotifyMessage('Hi ' + user.display_name + ',\n\nI want to talk to you.\nPlease Call me 🙂');
+    setNotifyModalVisible(true);
+  };
+
+  const handleSendNotification = async () => {
+    if (!currentUserId || !selectedUser || !notifyMessage.trim()) {
+      return;
+    }
+
+    try {
+      const chatId = await getOrCreateChatSession(currentUserId, selectedUser.user_id);
+      
+      // Send the message
+      const { error: messageError } = await supabase
+        .from('messages')
+        .insert({
+          chat_id: chatId,
+          sender_id: currentUserId,
+          text: notifyMessage,
+          read_by: [currentUserId]
+        });
+
+      if (messageError) throw messageError;
+
+      Toast.show({
+        type: 'success',
+        text1: 'Success',
+        text2: 'Message sent successfully'
+      });
+
+      setNotifyModalVisible(false);
+      setNotifyMessage('');
+      setSelectedUser(null);
+
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to send message'
+      });
+    }
+  };
+
   const renderVerifiedSection = () => {
     if (verificationStatus !== 'verified') return null;
     return (
@@ -461,8 +701,30 @@ const HomeScreen = ({ navigation }: Props) => {
     }
   }, [gender]);
 
-  // Conditional rendering: male users get a different dashboard
-  if (gender && gender.toLowerCase() === 'male') {
+  // Render loading state while fetching initial data
+  if (loadingProfile && !initialLoadComplete) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#00BFA6" />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Show error state if there's a profile error
+  if (profileError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.errorText}>{profileError}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Male dashboard
+  if (gender?.toLowerCase() === 'male') {
     const handleTalkNow = async (user: any) => {
       if (!currentUserId) {
         Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified.' });
@@ -500,6 +762,9 @@ const HomeScreen = ({ navigation }: Props) => {
               <View>
                 <Text style={styles.greetingText}>{getGreeting()} 👋</Text>
                 <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
+                {gender?.toLowerCase() === 'female' && alonemeUserId && (
+                  <Text style={styles.userIdText}>{alonemeUserId}</Text>
+                )}
               </View>
               <View style={styles.headerActions}>
                 {/* No online/offline toggle for male users */}
@@ -518,7 +783,7 @@ const HomeScreen = ({ navigation }: Props) => {
           >
             <View style={styles.searchBarContainer}>
               <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
-              <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
+              <Text style={styles.searchPlaceholder}>Search</Text>
             </View>
           </TouchableOpacity>
 
@@ -535,28 +800,45 @@ const HomeScreen = ({ navigation }: Props) => {
                 <VerifiedUserCard
                   key={item.id}
                   user={item}
-                  onTalkNow={handleTalkNow}
+                  onTalkNow={(user) => user.is_online ? handleTalkNow(user) : handleNotifyUser(user)}
                   onViewProfile={handleViewProfile}
+                  showNotifyButton={!item.is_online}
                 />
               ))
             )
           )}
         </ScrollView>
+        <NotifyModal
+          visible={notifyModalVisible}
+          onClose={() => {
+            setNotifyModalVisible(false);
+            setNotifyMessage('');
+            setSelectedUser(null);
+          }}
+          onSend={handleSendNotification}
+          message={notifyMessage}
+          setMessage={setNotifyMessage}
+          selectedUser={selectedUser}
+        />
       </SafeAreaView>
     );
   }
 
-  // Otherwise, show the regular dashboard
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.profileSection}>
-          <View style={styles.profileHeader}>
-            <View>
-              <Text style={styles.greetingText}>{getGreeting()} 👋</Text>
-              <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
-            </View>
-            <View style={styles.headerActions}>
+  // Female dashboard (only shown when we're sure it's not male)
+  if (gender?.toLowerCase() === 'female' || gender === null) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.profileSection}>
+            <View style={styles.profileHeader}>
+              <View>
+                <Text style={styles.greetingText}>{getGreeting()} 👋</Text>
+                <Text style={styles.nameText}>{loadingProfile ? 'Loading...' : displayName}</Text>
+                {gender?.toLowerCase() === 'female' && alonemeUserId && (
+                  <Text style={styles.userIdText}>{alonemeUserId}</Text>
+                )}
+              </View>
+              <View style={styles.headerActions}>
                 <TouchableOpacity
                   style={[styles.statusToggle, isOnline && styles.statusToggleActive]}
                   onPress={async () => {
@@ -596,80 +878,100 @@ const HomeScreen = ({ navigation }: Props) => {
                         <View style={styles.badge} />
                     )}
                 </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-        <TouchableOpacity 
-          style={styles.searchSection}
-          onPress={handleSearchPress}
-        >
-          <View style={styles.searchBarContainer}>
-            <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
-            <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.searchSection}
+            onPress={handleSearchPress}
+          >
+            <View style={styles.searchBarContainer}>
+              <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
+              <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
+            </View>
+          </TouchableOpacity>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.statsScroll}
-          contentContainerStyle={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>₹0</Text>
-            <Text style={styles.statLabel}>Earnings</Text>
+          {gender?.toLowerCase() === 'female' && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.statsScroll}
+              contentContainerStyle={styles.statsContainer}>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>₹0</Text>
+                <Text style={styles.statLabel}>Earnings</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{sessionStats.chatHours.toFixed(1)}h</Text>
+                <Text style={styles.statLabel}>Chat Time</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{sessionStats.callHours.toFixed(1)}h</Text>
+                <Text style={styles.statLabel}>Call Time</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{sessionStats.videoHours.toFixed(1)}h</Text>
+                <Text style={styles.statLabel}>Video Time</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{sessionStats.totalSessions}</Text>
+                <Text style={styles.statLabel}>Sessions</Text>
+              </View>
+            </ScrollView>
+          )}
+
+          <View style={styles.actionsSection}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.actionGrid}>
+              <TouchableOpacity style={styles.actionCard} onPress={handleSetAvailabilityPress} disabled={isSavingAvailability}>
+                <View style={styles.actionIcon}>
+                  {isSavingAvailability ? (
+                    <ActivityIndicator size="small" color="#00BFA6" />
+                  ) : (
+                    <Icon name="cog" size={24} color="#00BFA6" />
+                  )}
+                </View>
+                <Text style={styles.actionText}>Set Availability</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionCard}>
+                <View style={styles.actionIcon}>
+                  <Icon name="chart-bar" size={24} color="#00BFA6" />
+                </View>
+                <Text style={styles.actionText}>Analytics</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionCard}>
+                <View style={styles.actionIcon}>
+                  <Icon name="cash-multiple" size={24} color="#00BFA6" />
+                </View>
+                <Text style={styles.actionText}>Earnings</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionCard}>
+                <View style={styles.actionIcon}>
+                  <Icon name="heart-outline" size={24} color="#00BFA6" />
+                </View>
+                <Text style={styles.actionText}>Support</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>0h</Text>
-            <Text style={styles.statLabel}>Listen Time</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>0</Text>
-            <Text style={styles.statLabel}>Sessions</Text>
-          </View>
+
+          {verificationStatus === 'verified' ? renderVerifiedSection() : renderVerificationBanner()}
         </ScrollView>
+        <AvailabilityModal 
+          visible={availabilityModalVisible} 
+          onClose={() => setAvailabilityModalVisible(false)} 
+          currentVideoStatus={initialVideoCallStatus}
+          onSave={handleSaveAvailability}
+        />
+      </SafeAreaView>
+    );
+  }
 
-        <View style={styles.actionsSection}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.actionGrid}>
-            <TouchableOpacity style={styles.actionCard} onPress={handleSetAvailabilityPress} disabled={isSavingAvailability}>
-              <View style={styles.actionIcon}>
-                {isSavingAvailability ? (
-                  <ActivityIndicator size="small" color="#00BFA6" />
-                ) : (
-                  <Icon name="cog" size={24} color="#00BFA6" />
-                )}
-              </View>
-              <Text style={styles.actionText}>Set Availability</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIcon}>
-                <Icon name="chart-bar" size={24} color="#00BFA6" />
-              </View>
-              <Text style={styles.actionText}>Analytics</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIcon}>
-                <Icon name="cash-multiple" size={24} color="#00BFA6" />
-              </View>
-              <Text style={styles.actionText}>Earnings</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionCard}>
-              <View style={styles.actionIcon}>
-                <Icon name="heart-outline" size={24} color="#00BFA6" />
-              </View>
-              <Text style={styles.actionText}>Support</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {verificationStatus === 'verified' ? renderVerifiedSection() : renderVerificationBanner()}
-      </ScrollView>
-      <AvailabilityModal 
-        visible={availabilityModalVisible} 
-        onClose={() => setAvailabilityModalVisible(false)} 
-        currentVideoStatus={initialVideoCallStatus}
-        onSave={handleSaveAvailability}
-      />
+  // Fallback for any other gender value (shouldn't normally happen)
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.errorText}>Invalid profile configuration</Text>
+      </View>
     </SafeAreaView>
   );
 };
@@ -964,6 +1266,131 @@ const styles = StyleSheet.create({
     color: '#00BFA6',
     fontWeight: '600',
     marginLeft: 10,
+  },
+  notifyModalContainer: {
+    width: '90%',
+    maxWidth: 400,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 0,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: '#252525',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: '#888',
+    marginTop: 20,
+    marginBottom: 15,
+    paddingHorizontal: 20,
+  },
+  messageLabel: {
+    fontSize: 16,
+    color: '#888',
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  communicationOptions: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  communicationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 12,
+    backgroundColor: '#252525',
+  },
+  communicationOptionSelected: {
+    backgroundColor: 'rgba(0, 191, 166, 0.1)',
+    borderWidth: 1,
+    borderColor: '#00BFA6',
+  },
+  optionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  optionText: {
+    color: '#888',
+    marginLeft: 12,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  optionTextSelected: {
+    color: '#00BFA6',
+  },
+  radioOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: '#888',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioOuterSelected: {
+    borderColor: '#00BFA6',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#00BFA6',
+  },
+  messageInput: {
+    backgroundColor: '#252525',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 15,
+    color: '#FFFFFF',
+    fontSize: 16,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  sendMessageButton: {
+    backgroundColor: '#00BFA6',
+    margin: 20,
+    padding: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendMessageButtonDisabled: {
+    backgroundColor: '#2A2A2A',
+  },
+  sendIcon: {
+    marginRight: 8,
+  },
+  sendMessageButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userIdText: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 2,
   },
 });
 

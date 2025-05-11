@@ -23,6 +23,7 @@ interface ChatSession {
   last_message_time: string;
   unread_count: number;
   otherUserName: string;
+  otherUserAlonemeId?: string;
 }
 
 const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
@@ -69,80 +70,52 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
     }
 
     try {
-      // 1. Get all chat sessions for the user
-      const { data: sessions, error: sessionError } = await supabase
+      // Get all chat sessions for the current user
+      const { data: sessions, error: sessionsError } = await supabase
         .from('chat_sessions')
-        .select('id, participants, last_message, last_message_time')
-        .contains('participants', [currentUserId]);
+        .select('*')
+        .contains('participants', [currentUserId])
+        .order('last_message_time', { ascending: false }); // Sort by most recent message
 
-      if (sessionError) {
-        console.error('Error fetching chat sessions:', sessionError);
-        setError('Failed to load chat sessions');
-        setIsLoading(false);
-        return;
-      }
+      if (sessionsError) throw sessionsError;
 
-      console.log('Fetched sessions:', sessions);
+      // Process each session to get other user's details
+      const processedSessions = await Promise.all((sessions || []).map(async (session) => {
+        const otherUserId = session.participants.find((id: string) => id !== currentUserId);
+        if (!otherUserId) return null;
 
-      // 2. For each session, get unread count and other user name
-      const sessionList: ChatSession[] = [];
-      let totalUnread = 0;
+        // Get other user's details
+        const { data: userData, error: userError } = await supabase
+          .from('user_preferences')
+          .select('display_name, aloneme_user_id')
+          .eq('user_id', otherUserId)
+          .single();
 
-      if (sessions && sessions.length > 0) {
-        for (const session of sessions) {
-          try {
-            // Get the other participant
-            const otherUserId = session.participants.find((id: string) => id !== currentUserId);
-            console.log('Processing session:', session.id, 'Other user:', otherUserId);
+        if (userError || !userData) return null;
 
-            // Get other user's display name
-            let otherUserName = 'User';
-            if (otherUserId) {
-              const { data: userData, error: userError } = await supabase
-                .from('user_preferences')
-                .select('display_name')
-                .eq('user_id', otherUserId)
-                .single();
+        return {
+          id: session.id,
+          participants: session.participants,
+          last_message: session.last_message || 'No messages yet',
+          last_message_time: session.last_message_time || '',
+          unread_count: 0,
+          otherUserName: userData.display_name || 'User',
+          otherUserAlonemeId: userData.aloneme_user_id
+        };
+      }));
 
-              if (userError) {
-                console.error('Error fetching user data:', userError);
-              } else if (userData?.display_name) {
-                otherUserName = userData.display_name;
-              }
-            }
+      // Filter out null values and sort by last_message_time
+      const validSessions = processedSessions.filter(Boolean) as ChatSession[];
+      const sortedSessions = validSessions.sort((a, b) => {
+        const timeA = new Date(a.last_message_time).getTime();
+        const timeB = new Date(b.last_message_time).getTime();
+        return timeB - timeA; // Sort in descending order (newest first)
+      });
 
-            // Get unread count for this session
-            const { count: unread, error: countError } = await supabase
-              .from('messages')
-              .select('id', { count: 'exact', head: true })
-              .eq('chat_id', session.id)
-              .neq('sender_id', currentUserId)
-              .not('read_by', 'cs', `{${currentUserId}}`);
-
-            if (countError) {
-              console.error('Error fetching unread count:', countError);
-            }
-
-            sessionList.push({
-              id: session.id,
-              participants: session.participants,
-              last_message: session.last_message || 'No messages yet',
-              last_message_time: session.last_message_time || '',
-              unread_count: unread || 0,
-              otherUserName,
-            });
-            totalUnread += unread || 0;
-          } catch (err) {
-            console.error('Error processing chat session:', err);
-          }
-        }
-      }
-
-      console.log('Processed session list:', sessionList);
-      setChatSessions(sessionList);
+      setChatSessions(sortedSessions);
     } catch (err) {
-      console.error('Unexpected error in fetchChatSessions:', err);
-      setError('An unexpected error occurred');
+      console.error('Error fetching chat sessions:', err);
+      setError('Failed to load chats');
     } finally {
       setIsLoading(false);
     }
@@ -168,41 +141,43 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
           // Get the other user's name if needed
           const otherUserId = updatedSession.participants.find((id: string) => id !== currentUserId);
           let otherUserName = 'User';
+          let otherUserAlonemeId = null;
           
           if (otherUserId) {
             const { data: userData } = await supabase
               .from('user_preferences')
-              .select('display_name')
+              .select('display_name, aloneme_user_id')
               .eq('user_id', otherUserId)
               .single();
             
-            if (userData?.display_name) {
-              otherUserName = userData.display_name;
+            if (userData) {
+              otherUserName = userData.display_name || 'User';
+              otherUserAlonemeId = userData.aloneme_user_id;
             }
           }
 
-          // Update only the changed session in the state
           setChatSessions(prevSessions => {
-            const sessionIndex = prevSessions.findIndex(s => s.id === updatedSession.id);
-            if (sessionIndex === -1) {
-              // If session doesn't exist, add it
-              return [...prevSessions, {
-                id: updatedSession.id,
-                participants: updatedSession.participants,
-                last_message: updatedSession.last_message || 'No messages yet',
-                last_message_time: updatedSession.last_message_time || '',
-                unread_count: 0, // Will be updated by the messages subscription
-                otherUserName
-              }];
-            }
-
-            // Update existing session
-            const newSessions = [...prevSessions];
-            newSessions[sessionIndex] = {
-              ...newSessions[sessionIndex],
-              last_message: updatedSession.last_message || newSessions[sessionIndex].last_message,
-              last_message_time: updatedSession.last_message_time || newSessions[sessionIndex].last_message_time
+            // Remove the updated session if it exists
+            const filteredSessions = prevSessions.filter(s => s.id !== updatedSession.id);
+            
+            // Create the new session object
+            const newSession = {
+              id: updatedSession.id,
+              participants: updatedSession.participants,
+              last_message: updatedSession.last_message || 'No messages yet',
+              last_message_time: updatedSession.last_message_time || '',
+              unread_count: 0,
+              otherUserName,
+              otherUserAlonemeId
             };
+
+            // Add the new session and sort
+            const newSessions = [...filteredSessions, newSession].sort((a, b) => {
+              const timeA = new Date(a.last_message_time).getTime();
+              const timeB = new Date(b.last_message_time).getTime();
+              return timeB - timeA; // Sort in descending order (newest first)
+            });
+
             return newSessions;
           });
         }
@@ -214,22 +189,27 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
           const newMessage = payload.new;
           if (!newMessage || !newMessage.chat_id) return;
 
-          // Only update unread count if message is from other user
-          if (newMessage.sender_id !== currentUserId) {
-            setChatSessions(prevSessions => {
-              return prevSessions.map(session => {
-                if (session.id === newMessage.chat_id) {
-                  return {
-                    ...session,
-                    unread_count: session.unread_count + 1,
-                    last_message: newMessage.text,
-                    last_message_time: newMessage.created_at
-                  };
-                }
-                return session;
-              });
+          setChatSessions(prevSessions => {
+            // Create new array with updated session
+            const updatedSessions = prevSessions.map(session => {
+              if (session.id === newMessage.chat_id) {
+                return {
+                  ...session,
+                  unread_count: newMessage.sender_id !== currentUserId ? session.unread_count + 1 : session.unread_count,
+                  last_message: newMessage.text,
+                  last_message_time: newMessage.created_at
+                };
+              }
+              return session;
             });
-          }
+
+            // Sort sessions by last message time
+            return updatedSessions.sort((a, b) => {
+              const timeA = new Date(a.last_message_time).getTime();
+              const timeB = new Date(b.last_message_time).getTime();
+              return timeB - timeA; // Sort in descending order (newest first)
+            });
+          });
         }
       )
       .on(
@@ -307,7 +287,12 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
               </View>
               <View style={styles.chatContent}>
                 <View style={styles.chatHeader}>
-                  <Text style={styles.nameText}>{item.otherUserName}</Text>
+                  <View style={styles.nameContainer}>
+                    <Text style={styles.nameText}>{item.otherUserName}</Text>
+                    {item.otherUserAlonemeId && (
+                      <Text style={styles.userIdText}>{item.otherUserAlonemeId}</Text>
+                    )}
+                  </View>
                   <Text style={styles.timeText}>
                     {formatMessageTime(item.last_message_time)}
                   </Text>
@@ -382,10 +367,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 5,
   },
+  nameContainer: {
+    flex: 1,
+  },
   nameText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  userIdText: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
   },
   timeText: {
     fontSize: 12,

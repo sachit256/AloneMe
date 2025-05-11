@@ -23,6 +23,7 @@ type User = {
   display_name: string;
   age: number;
   gender: string;
+  aloneme_user_id?: string;
 };
 
 type FilterState = {
@@ -66,7 +67,7 @@ const SearchScreen = () => {
     try {
       let query = supabase
         .from('user_preferences')
-        .select('user_id, display_name, age, gender');
+        .select('user_id, display_name, age, gender, aloneme_user_id');
 
       // Exclude current user
       query = query.neq('user_id', currentUserId);
@@ -83,7 +84,7 @@ const SearchScreen = () => {
 
       // Apply search query if exists
       if (searchQuery) {
-        query = query.ilike('display_name', `%${searchQuery}%`);
+        query = query.or(`display_name.ilike.%${searchQuery}%,aloneme_user_id.ilike.%${searchQuery}%`);
       }
 
       const { data, error } = await query;
@@ -95,6 +96,7 @@ const SearchScreen = () => {
         display_name: user.display_name,
         age: user.age,
         gender: user.gender,
+        aloneme_user_id: user.aloneme_user_id,
       }));
       setUsers(transformedData);
     } catch (error) {
@@ -112,6 +114,9 @@ const SearchScreen = () => {
       </View>
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{item.display_name}</Text>
+        {item.aloneme_user_id && item.gender?.toLowerCase() === 'female' && (
+          <Text style={styles.userId}>{item.aloneme_user_id}</Text>
+        )}
         <Text style={styles.userDetails}>
           {item.age} years • {item.gender}
         </Text>
@@ -193,7 +198,7 @@ const SearchScreen = () => {
           <Icon name="magnify" size={24} color={colors.text.secondary} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search users..."
+            placeholder="Search by name or AloneMe ID"
             placeholderTextColor={colors.text.secondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -394,7 +399,12 @@ const styles = StyleSheet.create({
   searchButtonText: {
     ...typography.button,
     color: '#fff'
-  }
+  },
+  userId: {
+    ...typography.caption,
+    color: colors.text.secondary,
+    marginBottom: 2,
+  },
 });
 
 export default SearchScreen; 

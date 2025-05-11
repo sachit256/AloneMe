@@ -22,12 +22,14 @@ export type VerifiedUserCardProps = {
     is_online?: boolean;
     rating?: number | null;
     spentHours?: number | null;
+    aloneme_user_id?: string | null;
   };
   onTalkNow: (user: any) => void;
   onViewProfile: (user: any) => void;
+  showNotifyButton?: boolean;
 };
 
-const VerifiedUserCard = ({ user, onTalkNow, onViewProfile }: VerifiedUserCardProps) => {
+const VerifiedUserCard = ({ user, onTalkNow, onViewProfile, showNotifyButton }: VerifiedUserCardProps) => {
   const name = user.display_name || 'Anonymous';
   const avatarText = name.charAt(0).toUpperCase();
   const rating = user.rating || 4.5; // Placeholder
@@ -51,6 +53,9 @@ const VerifiedUserCard = ({ user, onTalkNow, onViewProfile }: VerifiedUserCardPr
         </TouchableOpacity>
         <View style={styles.userInfoContainer}>
           <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+          {user.aloneme_user_id && (
+            <Text style={styles.userId}>{user.aloneme_user_id}</Text>
+          )}
           <View style={styles.detailsRow}>
             <View style={styles.ratingContainer}>
               <Icon name="star" size={14} color="#FFC107" />
@@ -72,10 +77,12 @@ const VerifiedUserCard = ({ user, onTalkNow, onViewProfile }: VerifiedUserCardPr
       )}
       <View style={styles.cardBottomSection}>
         <TouchableOpacity
-          style={styles.talkButton}
+          style={[styles.talkButton, showNotifyButton && styles.notifyButton]}
           onPress={() => onTalkNow(user)}
         >
-          <Text style={styles.talkButtonText}>Talk Now</Text>
+          <Text style={styles.talkButtonText}>
+            {showNotifyButton ? 'Notify' : 'Talk Now'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -165,6 +172,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: 20,
   },
+  notifyButton: {
+    backgroundColor: '#2A2A2A',
+    borderWidth: 1,
+    borderColor: themeColors.primary,
+  },
   talkButtonText: {
     ...typography.buttonSmall,
     color: themeColors.textOnPrimary,
@@ -179,6 +191,11 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 2,
     borderColor: '#1E1E1E',
+  },
+  userId: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 4,
   },
 });
 

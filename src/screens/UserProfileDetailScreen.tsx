@@ -31,19 +31,21 @@ const themeColors = {
 };
 
 // Type for the fetched profile data
-type ProfileData = {
+interface ProfileData {
   display_name: string | null;
   age: number | null;
   emotional_story: string | null;
-  // Add any other fields you want to display, e.g., created_at for join date
-} | null;
+  aloneme_user_id: string | null;
+  gender: string | null;
+  total_hours_spent: number | null;
+}
 
 const UserProfileDetailScreen = ({
   route,
   navigation,
 }: RootStackScreenProps<'UserProfileDetail'>) => {
   const { userId: reviewedUserId } = route.params; // Renamed for clarity
-  const [profile, setProfile] = useState<ProfileData>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserRating, setCurrentUserRating] = useState<number>(0); // State for user's rating input
@@ -73,7 +75,7 @@ const UserProfileDetailScreen = ({
         // Fetch profile being viewed
         const { data: profileData, error: profileError } = await supabase
           .from('user_preferences')
-          .select('display_name, age, emotional_story')
+          .select('display_name, age, emotional_story, aloneme_user_id, gender, total_hours_spent')
           .eq('user_id', reviewedUserId)
           .single();
 
@@ -253,7 +255,10 @@ const UserProfileDetailScreen = ({
              <Text style={styles.avatarText}>{avatarText}</Text>
            </View>
            <Text style={styles.profileName}>{name}</Text>
-           {profile.age && (
+           {profile?.aloneme_user_id && (
+             <Text style={styles.profileId}>{profile.aloneme_user_id}</Text>
+           )}
+           {profile?.age && (
              <Text style={styles.profileAge}>{profile.age} years old</Text>
            )}
         </View>
@@ -305,6 +310,12 @@ const UserProfileDetailScreen = ({
         </View>
 
         {/* Add more sections for other details if fetched */}
+        {profile?.gender?.toLowerCase() === 'female' && profile.total_hours_spent !== null && (
+          <View style={styles.hoursContainer}>
+            <Text style={styles.hoursLabel}>Hours Spent Listening</Text>
+            <Text style={styles.hoursValue}>{profile.total_hours_spent.toFixed(1)}</Text>
+          </View>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -433,6 +444,28 @@ const styles = StyleSheet.create({
      ...typography.button,
      color: '#FFFFFF',
      fontWeight: '600',
+  },
+  profileId: {
+    ...typography.body,
+    color: themeColors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  hoursContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  hoursLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  hoursValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
 });
 

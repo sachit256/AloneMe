@@ -17,6 +17,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { commonStyles, typography, spacing, colors } from '../styles/common';
 import { supabase, Message as SupabaseMessage, createChatChannel } from '../lib/supabase';
 import Toast from 'react-native-toast-message';
+import { startSession, endSession } from '../utils/sessionTracking';
 
 const themeColors = {
   background: '#1E1E1E',
@@ -37,11 +38,18 @@ type Message = {
 
 type ChatScreenProps = RootStackScreenProps<'Chat'>;
 
+interface UserData {
+  gender?: string;
+  display_name?: string;
+  // ... other user fields ...
+}
+
 const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
   const [message, setMessage] = useState('');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isChatActive, setIsChatActive] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [otherUserAlonemeId, setOtherUserAlonemeId] = useState<string | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const flatListRef = useRef<FlatList>(null);
   const chatChannelRef = useRef<any>(null);
@@ -52,6 +60,10 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
   const [isSending, setIsSending] = useState(false);
   const isFocused = useIsFocused();
   const currentUserId = route.params?.userId;
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [otherUserData, setOtherUserData] = useState<UserData | null>(null);
+  const otherUserId = route.params?.otherUserId;
 
   // Helper function to mark messages as read by the current user
   const markMessagesAsRead = async (messageIdsToMark: string[]) => {
@@ -266,9 +278,16 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
     setShowLeaveModal(true);
   };
 
-  const handleConfirmExit = () => {
+  const handleConfirmExit = async () => {
     setShowLeaveModal(false);
     stopTimer();
+    
+    // Calculate session duration and end the session
+    if (currentSessionId) {
+      const durationMinutes = Math.floor(elapsedTime / 60); // Convert seconds to minutes
+      await endSession(currentSessionId, durationMinutes);
+    }
+    
     navigation.goBack();
   };
 
@@ -361,6 +380,75 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
       .toUpperCase();
   };
 
+  useEffect(() => {
+    const fetchOtherUserAlonemeId = async () => {
+      if (!route.params?.otherUserId) return;
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('aloneme_user_id')
+        .eq('user_id', route.params.otherUserId)
+        .single();
+      
+      if (data?.aloneme_user_id) {
+        setOtherUserAlonemeId(data.aloneme_user_id);
+      }
+    };
+    
+    fetchOtherUserAlonemeId();
+  }, [route.params?.otherUserId]);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!currentUserId || !otherUserId) return;
+
+      try {
+        // Fetch current user data
+        const { data: currentUserData, error: currentUserError } = await supabase
+          .from('user_preferences')
+          .select('gender, display_name')
+          .eq('user_id', currentUserId)
+          .single();
+
+        if (currentUserError) throw currentUserError;
+        setUserData(currentUserData);
+
+        // Fetch other user data
+        const { data: otherUserData, error: otherUserError } = await supabase
+          .from('user_preferences')
+          .select('gender, display_name')
+          .eq('user_id', otherUserId)
+          .single();
+
+        if (otherUserError) throw otherUserError;
+        setOtherUserData(otherUserData);
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+      }
+    };
+
+    fetchUserData();
+  }, [currentUserId, otherUserId]);
+
+  useEffect(() => {
+    const initializeChat = async () => {
+      // Start session if male user is chatting with female listener
+      if (otherUserData?.gender?.toLowerCase() === 'female' && userData?.gender?.toLowerCase() === 'male') {
+        const sessionId = await startSession(otherUserId, currentUserId, 'chat');
+        setCurrentSessionId(sessionId);
+      }
+    };
+
+    initializeChat();
+
+    // Cleanup function to end session
+    return () => {
+      if (currentSessionId) {
+        const durationMinutes = Math.floor(elapsedTime / 60); // Convert seconds to minutes
+        endSession(currentSessionId, durationMinutes);
+      }
+    };
+  }, [currentUserId, otherUserId, userData, otherUserData]);
+
   const renderMessage = ({ item }: { item: Message }) => {
     const isMe = item.sender === 'me';
     let status = '';
@@ -401,6 +489,9 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
         </TouchableOpacity>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>{route.params?.otherUserName}</Text>
+          {otherUserAlonemeId && (
+            <Text style={styles.headerSubtitle}>{otherUserAlonemeId}</Text>
+          )}
           <Text style={styles.timerText}>{formatTime(elapsedTime)}</Text>
         </View>
         <View style={styles.callButtons}>
@@ -507,6 +598,11 @@ const styles = StyleSheet.create({
     color: themeColors.textPrimary,
     fontWeight: '700',
     fontSize: 18,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 4,
   },
   timerText: {
     ...typography.caption,

@@ -42,6 +42,10 @@ import UserProfileDetailScreen from './src/screens/UserProfileDetailScreen';
 import AnnouncementsScreen from './src/screens/AnnouncementsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import SearchScreen from './src/screens/SearchScreen';
+import TermsOfServiceScreen from './src/screens/TermsOfServiceScreen';
+import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
+import ContactUsScreen from './src/screens/ContactUsScreen';
+
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -150,6 +154,9 @@ const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
   UserProfileDetail: UserProfileDetailScreen,
   Announcements: AnnouncementsScreen,
   Profile: ProfileScreen,
+  TermsOfService: TermsOfServiceScreen,
+  PrivacyPolicy: PrivacyPolicyScreen,
+  ContactUs: ContactUsScreen,
   Home: MainTabs,
   Settings: MainTabs,
   Search: SearchScreen,

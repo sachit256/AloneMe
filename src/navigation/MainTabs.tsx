@@ -105,6 +105,16 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
   const currentUserId = useSelector((state: RootState) => state.auth.userProfile.userId);
   const { unreadCount } = useUnreadChats((currentUserId ?? null) as string | null);
 
+  // Add check for screens where we want to hide the tab bar
+  const currentRoute = state.routes[state.index];
+  const currentScreen = descriptors[currentRoute.key].route.name;
+  
+  // Hide tab bar for these screens
+  const hideTabBarScreens = ['TermsOfService', 'PrivacyPolicy', 'ContactUs'];
+  if (hideTabBarScreens.includes(currentScreen)) {
+    return null;
+  }
+
   const handleMenuSelect = (itemId: string) => {
     console.log('Selected:', itemId);
     // Navigate based on the selected menu item ID
@@ -209,6 +219,7 @@ const CustomTabBar = ({state, descriptors, navigation}: any) => {
 const MainTabs = () => {
   const gender = useSelector((state: RootState) => state.auth.userProfile.gender);
   const isMale = gender && gender.toLowerCase() === 'male';
+  const isFemale = gender?.toLowerCase() === 'female';
 
   // Define tabs dynamically based on gender
   const tabs = [
@@ -222,11 +233,20 @@ const MainTabs = () => {
       component: ChatsScreen,
       options: { title: 'Chats' },
     },
-    // Only add Menu and Activity for non-male users
-    ...(!isMale
+    // Only add Menu and Activity for female users
+    ...(isFemale
       ? [
           { name: 'Menu', component: MenuScreen },
-          { name: 'Activity', component: ActivityScreen },
+          { 
+            name: 'Activity', 
+            component: ActivityScreen,
+            options: {
+              title: 'Activity',
+              tabBarIcon: ({ color, size }: { color: string; size: number }) => (
+                <Icon name="chart-timeline-variant" color={color} size={size} />
+              ),
+            }
+          },
         ]
       : []),
     {

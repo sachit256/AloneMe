@@ -10,6 +10,8 @@ interface UserProfileDBData {
   date_of_birth?: string | null; 
   preferred_language?: string | null;
   gender?: string | null;
+  aloneme_user_id?: string | null;
+  total_hours_spent?: number;
 }
 
 
@@ -59,7 +61,7 @@ async function fetchUserProfileFromDB(userId: string): Promise<UserProfileDBData
   console.log(`Fetching Supabase profile for userId: ${userId}`);
   const { data, error } = await supabase
     .from('user_preferences')
-    .select('display_name, date_of_birth, preferred_language, gender')
+    .select('display_name, date_of_birth, preferred_language, gender, aloneme_user_id, total_hours_spent')
     .eq('user_id', userId)
     .single();
 
@@ -184,6 +186,9 @@ const ProfileScreen = ({ route, navigation }: Props) => {
             <Text style={styles.avatarPlaceholderText}>{getInitials(userProfile.display_name)}</Text>
           </View>
           <Text style={styles.nameRedesigned}>{userProfile.display_name || 'User'}</Text>
+          {userProfile.aloneme_user_id && (
+            <Text style={styles.userIdText}>{userProfile.aloneme_user_id}</Text>
+          )}
           <View style={styles.pillsRow}>
             {userProfile.gender && (
               <View style={styles.pill}>
@@ -196,6 +201,12 @@ const ProfileScreen = ({ route, navigation }: Props) => {
               </View>
             )}
           </View>
+          {userProfile.gender?.toLowerCase() === 'female' && userProfile.total_hours_spent !== undefined && (
+            <View style={styles.hoursContainer}>
+              <Text style={styles.hoursLabel}>Hours Spent Listening</Text>
+              <Text style={styles.hoursValue}>{userProfile.total_hours_spent.toFixed(1)}</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -240,7 +251,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
     padding: 10,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    // backgroundColor: 'rgba(0,0,0,0.3)',
   },
   backButtonText: {
     color: '#FFFFFF',
@@ -385,6 +396,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textTransform: 'capitalize',
+  },
+  userIdText: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  hoursContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  hoursLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  hoursValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
 });
 

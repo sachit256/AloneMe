@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, /* SafeAreaView, */ ScrollView, ActivityIndicat
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // Import from library
 import { RootStackScreenProps } from '../types/navigation';
 import { supabase } from '../lib/supabase'; // Import Supabase client
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 // Interfaces for fetched data - adjust to your Supabase schema
 interface UserProfileDBData {
@@ -12,6 +13,7 @@ interface UserProfileDBData {
   gender?: string | null;
   aloneme_user_id?: string | null;
   total_hours_spent?: number;
+  verification_status?: string | null;
 }
 
 
@@ -61,7 +63,7 @@ async function fetchUserProfileFromDB(userId: string): Promise<UserProfileDBData
   console.log(`Fetching Supabase profile for userId: ${userId}`);
   const { data, error } = await supabase
     .from('user_preferences')
-    .select('display_name, date_of_birth, preferred_language, gender, aloneme_user_id, total_hours_spent')
+    .select('display_name, date_of_birth, preferred_language, gender, aloneme_user_id, total_hours_spent, verification_status')
     .eq('user_id', userId)
     .single();
 
@@ -185,7 +187,12 @@ const ProfileScreen = ({ route, navigation }: Props) => {
           <View style={[styles.avatar, styles.avatarPlaceholder, styles.avatarRedesigned]}>
             <Text style={styles.avatarPlaceholderText}>{getInitials(userProfile.display_name)}</Text>
           </View>
-          <Text style={styles.nameRedesigned}>{userProfile.display_name || 'User'}</Text>
+          <Text style={styles.nameRedesigned}>
+            {userProfile.display_name || 'User'}
+            {userProfile.verification_status === 'verified' && (
+              <Icon name="check-decagram" size={20} color="#00BFA6" style={{ marginLeft: 6 }} />
+            )}
+          </Text>
           {userProfile.aloneme_user_id && (
             <Text style={styles.userIdText}>{userProfile.aloneme_user_id}</Text>
           )}

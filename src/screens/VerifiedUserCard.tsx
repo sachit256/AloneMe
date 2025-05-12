@@ -23,6 +23,7 @@ export type VerifiedUserCardProps = {
     rating?: number | null;
     spentHours?: number | null;
     aloneme_user_id?: string | null;
+    verification_status?: string | null;
   };
   onTalkNow: (user: any) => void;
   onViewProfile: (user: any) => void;
@@ -52,7 +53,12 @@ const VerifiedUserCard = ({ user, onTalkNow, onViewProfile, showNotifyButton }: 
           </View>
         </TouchableOpacity>
         <View style={styles.userInfoContainer}>
-          <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+          <Text style={styles.userName} numberOfLines={1}>
+            {name}
+            {user.verification_status === 'verified' && (
+              <Icon name="check-decagram" size={18} color="#00BFA6" style={{ marginLeft: 6 }} />
+            )}
+          </Text>
           {user.aloneme_user_id && (
             <Text style={styles.userId}>{user.aloneme_user_id}</Text>
           )}

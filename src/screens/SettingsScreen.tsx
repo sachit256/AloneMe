@@ -78,15 +78,15 @@ const SettingsScreen = ({ navigation }: SettingsStackScreenProps<'SettingsScreen
             }
           })}
           {renderSettingItem('Verification', 'Get verified badge', () => { /* TODO: Navigate to Verification */ })}
-          {renderSettingItem('Privacy', 'Control your privacy settings', () => { /* Navigate to Privacy */ })}
+          {/* {renderSettingItem('Privacy', 'Control your privacy settings', () => { })} */}
         </View>
         
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>Preferences</Text>
-          {renderSettingItem('Notifications', undefined, () => { /* Navigate to Notifications */ })}
-          {renderSettingItem('Language', undefined, () => { /* Navigate to Language */ })}
-          {renderSettingItem('Theme', undefined, () => { /* Navigate to Theme */ })}
-        </View>
+          {renderSettingItem('Notifications', undefined, () => {})}
+          {renderSettingItem('Language', undefined, () => {})}
+          {renderSettingItem('Theme', undefined, () => {})}
+        </View> */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Legal & Support</Text>

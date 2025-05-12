@@ -300,6 +300,7 @@ const HomeScreen = ({ navigation }: Props) => {
   const [verifiedUsers, setVerifiedUsers] = useState<any[]>([]);
   const [errorVerifiedUsers, setErrorVerifiedUsers] = useState<string | null>(null);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
 
   // New states for availability modal
   const [availabilityModalVisible, setAvailabilityModalVisible] = useState(false);
@@ -386,6 +387,17 @@ const HomeScreen = ({ navigation }: Props) => {
       userIdToSet = user.id;
       setCurrentUserId(user.id);
 
+      // Fetch wallet balance
+      const { data: walletData, error: walletError } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!walletError) {
+        setWalletBalance(walletData?.balance || 0);
+      }
+
       const { data: profileData, error: profileFetchError } = await supabase
         .from('user_preferences')
         .select('display_name, verification_status, is_online, gender, age, aloneme_user_id')
@@ -468,8 +480,27 @@ const HomeScreen = ({ navigation }: Props) => {
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-      
-      // Only fetch if we haven't loaded initially or if we need to refresh
+
+      // Always fetch wallet balance when HomeScreen is focused
+      const fetchWalletBalance = async () => {
+        try {
+          const { data: { user }, error: authError } = await supabase.auth.getUser();
+          if (authError || !user) return;
+          const { data: walletData, error: walletError } = await supabase
+            .from('wallets')
+            .select('balance')
+            .eq('user_id', user.id)
+            .single();
+          if (!walletError && isMounted) {
+            setWalletBalance(walletData?.balance || 0);
+          }
+        } catch (err) {
+          // Ignore errors for now
+        }
+      };
+      fetchWalletBalance();
+
+      // Only fetch initial data on first load
       if (!initialLoadComplete) {
         fetchInitialData();
       }
@@ -602,7 +633,7 @@ const HomeScreen = ({ navigation }: Props) => {
       Toast.show({
         type: 'success',
         text1: 'Success',
-        text2: 'Message sent successfully'
+        text2: 'We have notified the listener that you want to talk to them.'
       });
 
       setNotifyModalVisible(false);
@@ -765,6 +796,16 @@ const HomeScreen = ({ navigation }: Props) => {
                 {gender?.toLowerCase() === 'female' && alonemeUserId && (
                   <Text style={styles.userIdText}>{alonemeUserId}</Text>
                 )}
+                <TouchableOpacity 
+                  style={styles.walletContainer}
+                  onPress={() => navigation.navigate('Wallet' as never)}
+                >
+                  <View style={styles.walletContent}>
+                    <Icon name="wallet" size={20} color="#00BFA6" style={styles.walletIcon} />
+                    <Text style={styles.walletBalance}>₹{walletBalance.toFixed(2)}</Text>
+                  </View>
+                  <Icon name="chevron-right" size={20} color="#888" />
+                </TouchableOpacity>
               </View>
               <View style={styles.headerActions}>
                 {/* No online/offline toggle for male users */}
@@ -837,6 +878,16 @@ const HomeScreen = ({ navigation }: Props) => {
                 {gender?.toLowerCase() === 'female' && alonemeUserId && (
                   <Text style={styles.userIdText}>{alonemeUserId}</Text>
                 )}
+                <TouchableOpacity 
+                  style={styles.walletContainer}
+                  onPress={() => navigation.navigate('Wallet' as never)}
+                >
+                  <View style={styles.walletContent}>
+                    <Icon name="wallet" size={20} color="#00BFA6" style={styles.walletIcon} />
+                    <Text style={styles.walletBalance}>₹{walletBalance.toFixed(2)}</Text>
+                  </View>
+                  <Icon name="chevron-right" size={20} color="#888" />
+                </TouchableOpacity>
               </View>
               <View style={styles.headerActions}>
                 <TouchableOpacity
@@ -887,7 +938,7 @@ const HomeScreen = ({ navigation }: Props) => {
           >
             <View style={styles.searchBarContainer}>
               <Icon name="magnify" size={22} color={colors.text.secondary} style={styles.searchIcon} />
-              <Text style={styles.searchPlaceholder}>Search users, topics...</Text>
+              <Text style={styles.searchPlaceholder}>Search</Text>
             </View>
           </TouchableOpacity>
 
@@ -898,7 +949,7 @@ const HomeScreen = ({ navigation }: Props) => {
               style={styles.statsScroll}
               contentContainerStyle={styles.statsContainer}>
               <View style={styles.statCard}>
-                <Text style={styles.statValue}>₹0</Text>
+                <Text style={styles.statValue}>₹{walletBalance.toFixed(2)}</Text>
                 <Text style={styles.statLabel}>Earnings</Text>
               </View>
               <View style={styles.statCard}>
@@ -1391,6 +1442,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     marginTop: 2,
+  },
+  walletContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1E1E1E',
+    padding: spacing.sm,
+    borderRadius: 10,
+    marginTop: spacing.sm,
+  },
+  walletContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  walletIcon: {
+    marginRight: spacing.xs,
+  },
+  walletBalance: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#00BFA6',
   },
 });
 

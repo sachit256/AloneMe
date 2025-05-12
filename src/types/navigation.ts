@@ -60,6 +60,7 @@ export type RootStackParamList = {
   TermsOfService: undefined;
   PrivacyPolicy: undefined;
   ContactUs: undefined;
+  Wallet: undefined;
 };
 
 // New Stack Navigator for Settings flow

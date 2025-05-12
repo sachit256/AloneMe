@@ -24,6 +24,7 @@ type User = {
   age: number;
   gender: string;
   aloneme_user_id?: string;
+  verification_status?: string;
 };
 
 type FilterState = {
@@ -67,7 +68,7 @@ const SearchScreen = () => {
     try {
       let query = supabase
         .from('user_preferences')
-        .select('user_id, display_name, age, gender, aloneme_user_id');
+        .select('user_id, display_name, age, gender, aloneme_user_id, verification_status');
 
       // Exclude current user
       query = query.neq('user_id', currentUserId);
@@ -97,6 +98,7 @@ const SearchScreen = () => {
         age: user.age,
         gender: user.gender,
         aloneme_user_id: user.aloneme_user_id,
+        verification_status: user.verification_status,
       }));
       setUsers(transformedData);
     } catch (error) {
@@ -113,7 +115,12 @@ const SearchScreen = () => {
         <Text style={styles.avatarInitialsText}>{getInitials(item.display_name)}</Text>
       </View>
       <View style={styles.userInfo}>
-        <Text style={styles.userName}>{item.display_name}</Text>
+        <Text style={styles.userName}>
+          {item.display_name}
+          {item.verification_status === 'verified' && (
+            <Icon name="check-decagram" size={16} color="#00BFA6" style={{ marginLeft: 4 }} />
+          )}
+        </Text>
         {item.aloneme_user_id && item.gender?.toLowerCase() === 'female' && (
           <Text style={styles.userId}>{item.aloneme_user_id}</Text>
         )}

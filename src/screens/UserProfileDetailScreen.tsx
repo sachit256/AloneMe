@@ -38,6 +38,7 @@ interface ProfileData {
   aloneme_user_id: string | null;
   gender: string | null;
   total_hours_spent: number | null;
+  verification_status: string | null;
 }
 
 const UserProfileDetailScreen = ({
@@ -75,7 +76,7 @@ const UserProfileDetailScreen = ({
         // Fetch profile being viewed
         const { data: profileData, error: profileError } = await supabase
           .from('user_preferences')
-          .select('display_name, age, emotional_story, aloneme_user_id, gender, total_hours_spent')
+          .select('display_name, age, emotional_story, aloneme_user_id, gender, total_hours_spent, verification_status')
           .eq('user_id', reviewedUserId)
           .single();
 
@@ -254,7 +255,12 @@ const UserProfileDetailScreen = ({
            <View style={styles.avatar}>
              <Text style={styles.avatarText}>{avatarText}</Text>
            </View>
-           <Text style={styles.profileName}>{name}</Text>
+           <Text style={styles.profileName}>
+             {name}
+             {profile.verification_status === 'verified' && (
+               <Icon name="check-decagram" size={20} color="#00BFA6" style={{ marginLeft: 6 }} />
+             )}
+           </Text>
            {profile?.aloneme_user_id && (
              <Text style={styles.profileId}>{profile.aloneme_user_id}</Text>
            )}

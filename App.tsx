@@ -45,6 +45,7 @@ import SearchScreen from './src/screens/SearchScreen';
 import TermsOfServiceScreen from './src/screens/TermsOfServiceScreen';
 import PrivacyPolicyScreen from './src/screens/PrivacyPolicyScreen';
 import ContactUsScreen from './src/screens/ContactUsScreen';
+import WalletScreen from './src/screens/WalletScreen';
 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -160,6 +161,7 @@ const screens: Record<keyof RootStackParamList, React.ComponentType<any>> = {
   Home: MainTabs,
   Settings: MainTabs,
   Search: SearchScreen,
+  Wallet: WalletScreen,
 };
 
 const App = () => {

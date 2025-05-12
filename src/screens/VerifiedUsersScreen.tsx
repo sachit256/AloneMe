@@ -38,6 +38,7 @@ type UserProfile = {
   is_online?: boolean;
   rating?: number | null;
   spentHours?: number | null;
+  verification_status: string;
 };
 
 const VerifiedUsersScreen = ({
@@ -66,7 +67,7 @@ const VerifiedUsersScreen = ({
         let query = supabase
           .from('user_preferences')
           // Select the new field 'emotional_story' and is_online
-          .select('id, user_id, display_name, age, emotional_story, is_online')
+          .select('id, user_id, display_name, age, emotional_story, is_online, verification_status')
           .eq('verification_status', 'verified');
 
         // 3. Add filter to exclude the current user IF we got their ID

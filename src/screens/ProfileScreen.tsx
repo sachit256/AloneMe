@@ -231,7 +231,7 @@ const ProfileScreen = ({ route, navigation }: Props) => {
             serviceCharges.map((charge) => (
               <View key={charge.id} style={styles.chargeItem}>
                 <Text style={styles.chargeText}>{charge.service_name}:</Text>
-                <Text style={styles.chargeValue}>{`₹${charge.charge_per_min} / min`}</Text>
+                <Text style={styles.chargeValue}>{`${charge.charge_per_min} Coins / min`}</Text>
               </View>
             ))
           ) : (

@@ -18,6 +18,8 @@ import { commonStyles, typography, spacing, colors } from '../styles/common';
 import { supabase, Message as SupabaseMessage, createChatChannel } from '../lib/supabase';
 import Toast from 'react-native-toast-message';
 import { startSession, endSession } from '../utils/sessionTracking';
+import NotifyModal from '../components/NotifyModal';
+import { isUserOnline } from '../utils/userStatus';
 
 const themeColors = {
   background: '#1E1E1E',
@@ -64,6 +66,9 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [otherUserData, setOtherUserData] = useState<UserData | null>(null);
   const otherUserId = route.params?.otherUserId;
+  const [notifyModalVisible, setNotifyModalVisible] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   // Helper function to mark messages as read by the current user
   const markMessagesAsRead = async (messageIdsToMark: string[]) => {
@@ -324,24 +329,49 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
       setIsSending(false);
       return;
     }
+
+    // Check if other user is online
+    if (otherUserId) {
+      const online = await isUserOnline(otherUserId);
+      if (!online) {
+        setSelectedUser({
+          user_id: otherUserId,
+          display_name: route.params?.otherUserName,
+          aloneme_user_id: otherUserAlonemeId,
+        });
+        setNotifyMessage('Listener is offline. Your message will be delivered when they come online.');
+        setNotifyModalVisible(true);
+        setIsSending(false);
+        return; // Don't proceed with sending the regular message
+      }
+    }
+
+    await sendMessage(message.trim());
+  };
+
+  const sendMessage = async (messageText: string) => {
+    const chatId = route.params?.chatId;
+    if (!chatId) return;
+
     const tempId = `temp-${Date.now()}`;
     const newMessage: Message = {
       id: tempId,
-      text: message.trim(),
+      text: messageText,
       sender: 'me',
       timestamp: new Date(),
-      read_by: [route.params?.userId], // Initialize with only the sender's ID
+      read_by: [route.params?.userId],
     };
     setMessages((prev) => [...prev, newMessage]);
     setMessage('');
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+
     try {
       // Insert the new message
       const { data: messageData, error: messageError } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: route.params?.userId,
-        text: newMessage.text,
-        read_by: [route.params?.userId], // Initialize with only the sender's ID in the database
+        text: messageText,
+        read_by: [route.params?.userId],
       });
 
       if (messageError) throw messageError;
@@ -350,7 +380,7 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
       const { error: updateError } = await supabase
         .from('chat_sessions')
         .update({
-          last_message: newMessage.text,
+          last_message: messageText,
           last_message_time: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -526,6 +556,26 @@ const ChatScreen = ({ navigation, route }: ChatScreenProps) => {
           </View>
         </View>
       </Modal>
+
+      <NotifyModal
+        visible={notifyModalVisible}
+        onClose={() => {
+          setNotifyModalVisible(false);
+          setNotifyMessage('');
+          setSelectedUser(null);
+        }}
+        onSend={async () => {
+          if (notifyMessage.trim()) {
+            await sendMessage(notifyMessage.trim());
+          }
+          setNotifyModalVisible(false);
+          setNotifyMessage('');
+          setSelectedUser(null);
+        }}
+        message={notifyMessage}
+        setMessage={setNotifyMessage}
+        selectedUser={selectedUser}
+      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

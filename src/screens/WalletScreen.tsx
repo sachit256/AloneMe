@@ -26,7 +26,7 @@ type Transaction = {
   created_at: string;
 };
 
-const WalletScreen = ({ navigation }: any) => {
+const ZoneScreen = ({ navigation }: any) => {
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -167,18 +167,18 @@ const WalletScreen = ({ navigation }: any) => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Icon name="chevron-left" size={24} color="#FFFFFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Wallet</Text>
+        <Text style={styles.headerTitle}>My Zone</Text>
         <View style={styles.headerPlaceholder} />
       </View>
 
       <ScrollView style={styles.scrollView}>
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>Available Balance</Text>
-          <Text style={styles.balanceAmount}>₹{balance.toFixed(2)}</Text>
+          <Text style={styles.balanceLabel}>Available Coins</Text>
+          <Text style={styles.balanceAmount}>{balance.toFixed(0)} Coins</Text>
         </View>
 
         <View style={styles.addMoneySection}>
-          <Text style={styles.sectionTitle}>Add Money</Text>
+          <Text style={styles.sectionTitle}>Add Coins</Text>
           <View style={styles.amountGrid}>
             {predefinedAmounts.map((amount) => (
               <TouchableOpacity
@@ -192,7 +192,7 @@ const WalletScreen = ({ navigation }: any) => {
                 <Text style={[
                   styles.amountButtonText,
                   selectedAmount === amount && styles.amountButtonTextSelected
-                ]}>₹{amount}</Text>
+                ]}>{amount} Coins</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -202,7 +202,7 @@ const WalletScreen = ({ navigation }: any) => {
             onPress={handleAddMoney}
             disabled={!selectedAmount}
           >
-            <Text style={styles.addMoneyButtonText}>Add Money</Text>
+            <Text style={styles.addMoneyButtonText}>Add Coins</Text>
           </TouchableOpacity>
         </View>
 
@@ -223,7 +223,7 @@ const WalletScreen = ({ navigation }: any) => {
                   styles.transactionAmount,
                   transaction.type === 'credit' ? styles.creditAmount : styles.debitAmount
                 ]}>
-                  {transaction.type === 'credit' ? '+' : '-'}₹{transaction.amount.toFixed(2)}
+                  {transaction.type === 'credit' ? '+' : '-'}{transaction.amount.toFixed(0)} Coins
                 </Text>
               </View>
             ))
@@ -373,4 +373,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default WalletScreen; 
+export default ZoneScreen; 

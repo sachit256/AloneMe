@@ -29,6 +29,8 @@ import { setUserProfile } from '../store/slices/authSlice';
 import { getOrCreateChatSession } from '../lib/chat';
 import { RootState } from '../store';
 import { getListenerHours } from '../utils/sessionTracking';
+import NotifyModal from '../components/NotifyModal';
+import { isUserOnline } from '../utils/userStatus';
 
 const { width } = Dimensions.get('window');
 
@@ -157,136 +159,6 @@ const AvailabilityModal = (
     );
 };
 
-const NotifyModal = ({
-  visible,
-  onClose,
-  onSend,
-  message,
-  setMessage,
-  selectedUser,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSend: () => void;
-  message: string;
-  setMessage: (text: string) => void;
-  selectedUser: any;
-}) => {
-  const [selectedOption, setSelectedOption] = useState<CommunicationType>('chat');
-
-  useEffect(() => {
-    const listenerName = selectedUser?.display_name || '';
-    const messages: Record<CommunicationType, string> = {
-      chat: `Hi ${listenerName}! I noticed you're offline. Would love to chat when you're back online! 💭`,
-      call: `Hi ${listenerName}! I'd like to have a voice call with you when you're available. Looking forward to connecting! 📞`,
-      video: `Hi ${listenerName}! I'd love to have a video call with you when you're back online. Can't wait to meet you! 📹`
-    };
-    setMessage(messages[selectedOption]);
-  }, [selectedOption, setMessage, selectedUser]);
-
-  if (!visible) return null;
-
-  const CommunicationOption = ({ 
-    type, 
-    icon, 
-    label 
-  }: { 
-    type: CommunicationType, 
-    icon: string, 
-    label: string 
-  }) => (
-    <TouchableOpacity 
-      style={[
-        styles.communicationOption,
-        selectedOption === type && styles.communicationOptionSelected
-      ]}
-      onPress={() => setSelectedOption(type)}
-    >
-      <View style={[
-        styles.radioOuter,
-        selectedOption === type && styles.radioOuterSelected
-      ]}>
-        {selectedOption === type && <View style={styles.radioInner} />}
-      </View>
-      <View style={styles.optionContent}>
-        <Icon name={icon} size={24} color={selectedOption === type ? "#00BFA6" : "#888"} />
-        <Text style={[
-          styles.optionText,
-          selectedOption === type && styles.optionTextSelected
-        ]}>{label}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  return (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={visible}
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity 
-        style={styles.modalOverlay} 
-        activeOpacity={1} 
-        onPress={onClose}
-      >
-        <TouchableOpacity 
-          activeOpacity={1} 
-          style={[styles.modalContainer, styles.notifyModalContainer]}
-          onPress={(e) => e.stopPropagation()}
-        >
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Listener is Offline</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Icon name="close" size={24} color="#888" />
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.modalSubtitle}>Send message instead?</Text>
-          
-          <View style={styles.communicationOptions}>
-            <CommunicationOption 
-              type="chat" 
-              icon="chat-outline" 
-              label="Chat" 
-            />
-            <CommunicationOption 
-              type="call" 
-              icon="phone" 
-              label="Voice Call" 
-            />
-            <CommunicationOption 
-              type="video" 
-              icon="video" 
-              label="Video Call" 
-            />
-          </View>
-
-          <Text style={styles.messageLabel}>Your message:</Text>
-          <TextInput
-            style={styles.messageInput}
-            placeholder="Type your message..."
-            placeholderTextColor="#888"
-            value={message}
-            onChangeText={setMessage}
-            multiline
-            numberOfLines={3}
-          />
-
-          <TouchableOpacity 
-            style={[styles.sendMessageButton, !message.trim() && styles.sendMessageButtonDisabled]} 
-            onPress={onSend}
-            disabled={!message.trim()}
-          >
-            <Icon name="send" size={20} color="#FFFFFF" style={styles.sendIcon} />
-            <Text style={styles.sendMessageButtonText}>Send Notification</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
-};
-
 const HomeScreen = ({ navigation }: Props) => {
   const dispatch = useDispatch();
   const [isOnline, setIsOnline] = useState(false);
@@ -311,8 +183,8 @@ const HomeScreen = ({ navigation }: Props) => {
   const [isUpdatingOnlineStatus, setIsUpdatingOnlineStatus] = useState(false);
 
   const [notifyModalVisible, setNotifyModalVisible] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [notifyMessage, setNotifyMessage] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   const [alonemeUserId, setAlonemeUserId] = useState<string>('');
 
@@ -604,21 +476,42 @@ const HomeScreen = ({ navigation }: Props) => {
     navigation.navigate('Search' as never);
   };
 
-  const handleNotifyUser = (user: any) => {
-    setSelectedUser(user);
-    setNotifyMessage('Hi ' + user.display_name + ',\n\nI want to talk to you.\nPlease Call me 🙂');
-    setNotifyModalVisible(true);
+  const handleTalkNow = async (user: any) => {
+    if (!currentUserId) {
+      Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified.' });
+      return;
+    }
+    if (!user.user_id) {
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Selected user ID not found.' });
+      return;
+    }
+    const online = await isUserOnline(user.user_id);
+    if (!online) {
+      setSelectedUser(user);
+      setNotifyMessage('');
+      setNotifyModalVisible(true);
+      return;
+    }
+    try {
+      const chatId = await getOrCreateChatSession(currentUserId, user.user_id);
+      navigation.getParent()?.navigate('Chat', {
+        chatId,
+        userName: displayName || 'User',
+        userId: currentUserId,
+        otherUserId: user.user_id,
+        otherUserName: user.display_name || 'User',
+      });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Could not start chat.' });
+    }
   };
 
   const handleSendNotification = async () => {
     if (!currentUserId || !selectedUser || !notifyMessage.trim()) {
       return;
     }
-
     try {
       const chatId = await getOrCreateChatSession(currentUserId, selectedUser.user_id);
-      
-      // Send the message
       const { error: messageError } = await supabase
         .from('messages')
         .insert({
@@ -627,19 +520,15 @@ const HomeScreen = ({ navigation }: Props) => {
           text: notifyMessage,
           read_by: [currentUserId]
         });
-
       if (messageError) throw messageError;
-
       Toast.show({
         type: 'success',
         text1: 'Success',
         text2: 'We have notified the listener that you want to talk to them.'
       });
-
       setNotifyModalVisible(false);
       setNotifyMessage('');
       setSelectedUser(null);
-
     } catch (error) {
       console.error('Error sending notification:', error);
       Toast.show({
@@ -756,28 +645,6 @@ const HomeScreen = ({ navigation }: Props) => {
 
   // Male dashboard
   if (gender?.toLowerCase() === 'male') {
-    const handleTalkNow = async (user: any) => {
-      if (!currentUserId) {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'User not identified.' });
-        return;
-      }
-      if (!user.user_id) {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'Selected user ID not found.' });
-        return;
-      }
-      try {
-        const chatId = await getOrCreateChatSession(currentUserId, user.user_id);
-        navigation.getParent()?.navigate('Chat', {
-          chatId,
-          userName: displayName || 'User',
-          userId: currentUserId,
-          otherUserId: user.user_id,
-          otherUserName: user.display_name || 'User',
-        });
-      } catch (err) {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'Could not start chat.' });
-      }
-    };
     const handleViewProfile = (user: any) => {
       if (!user.user_id) {
         Toast.show({ type: 'error', text1: 'Error', text2: 'User ID missing.' });
@@ -798,11 +665,11 @@ const HomeScreen = ({ navigation }: Props) => {
                 )}
                 <TouchableOpacity 
                   style={styles.walletContainer}
-                  onPress={() => navigation.navigate('Wallet' as never)}
+                  onPress={() => navigation.navigate('Zone' as never)}
                 >
                   <View style={styles.walletContent}>
                     <Icon name="wallet" size={20} color="#00BFA6" style={styles.walletIcon} />
-                    <Text style={styles.walletBalance}>₹{walletBalance.toFixed(2)}</Text>
+                    <Text style={styles.walletBalance}>{walletBalance.toFixed(0)} Coins</Text>
                   </View>
                   <Icon name="chevron-right" size={20} color="#888" />
                 </TouchableOpacity>
@@ -841,7 +708,7 @@ const HomeScreen = ({ navigation }: Props) => {
                 <VerifiedUserCard
                   key={item.id}
                   user={item}
-                  onTalkNow={(user) => user.is_online ? handleTalkNow(user) : handleNotifyUser(user)}
+                  onTalkNow={handleTalkNow}
                   onViewProfile={handleViewProfile}
                   showNotifyButton={!item.is_online}
                 />
@@ -880,11 +747,11 @@ const HomeScreen = ({ navigation }: Props) => {
                 )}
                 <TouchableOpacity 
                   style={styles.walletContainer}
-                  onPress={() => navigation.navigate('Wallet' as never)}
+                  onPress={() => navigation.navigate('Zone' as never)}
                 >
                   <View style={styles.walletContent}>
                     <Icon name="wallet" size={20} color="#00BFA6" style={styles.walletIcon} />
-                    <Text style={styles.walletBalance}>₹{walletBalance.toFixed(2)}</Text>
+                    <Text style={styles.walletBalance}>{walletBalance.toFixed(0)} Coins</Text>
                   </View>
                   <Icon name="chevron-right" size={20} color="#888" />
                 </TouchableOpacity>
@@ -949,7 +816,7 @@ const HomeScreen = ({ navigation }: Props) => {
               style={styles.statsScroll}
               contentContainerStyle={styles.statsContainer}>
               <View style={styles.statCard}>
-                <Text style={styles.statValue}>₹{walletBalance.toFixed(2)}</Text>
+                <Text style={styles.statValue}>{walletBalance.toFixed(0)} Coins</Text>
                 <Text style={styles.statLabel}>Earnings</Text>
               </View>
               <View style={styles.statCard}>

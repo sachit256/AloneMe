@@ -14,6 +14,8 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { supabase } from '../lib/supabase';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
+import NotifyModal from '../components/NotifyModal';
+import { isUserOnline } from '../utils/userStatus';
 
 // Chat session and message types
 interface ChatSession {
@@ -32,6 +34,9 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const channelRef = useRef<any>(null);
+  const [notifyModalVisible, setNotifyModalVisible] = useState(false);
+  const [notifyMessage, setNotifyMessage] = useState('');
+  const [selectedUser, setSelectedUser] = useState<any>(null);
 
   // Format the timestamp to a readable format
   const formatMessageTime = (timestamp: string | null) => {
@@ -246,17 +251,22 @@ const ChatsScreen = ({ navigation }: TabScreenProps<'Chat'>) => {
   }, [currentUserId]);
 
   const handleChatPress = (session: ChatSession) => {
-    // Get the other user's ID from the participants array
     const otherUserId = session.participants.find(id => id !== currentUserId);
-    
-    // Navigate to the Chat screen with all necessary parameters
+    if (!otherUserId) return;
     navigation.getParent()?.navigate('Chat', {
       chatId: session.id,
-      userName: 'You', // Current user's name
+      userName: 'You',
       userId: currentUserId,
       otherUserId: otherUserId,
       otherUserName: session.otherUserName,
     });
+  };
+
+  const handleSendNotification = async () => {
+    // Implement your notification logic here (reuse from HomeScreen if needed)
+    setNotifyModalVisible(false);
+    setNotifyMessage('');
+    setSelectedUser(null);
   };
 
   return (
